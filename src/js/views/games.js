@@ -40,7 +40,7 @@
         <span class="badge">${esc(game.rating)}</span>
         <span class="badge">${esc(bytes(game.sizeBytes))}</span>
         <span class="badge">${days ? `${days} days out` : esc(date(game.releaseDate))}</span>
-        ${game.playersOnline ? `<span class="badge badge-ok"><span class="dot dot-live"></span> ${game.playersOnline.toLocaleString()} playing</span>` : ''}
+        ${Number.isFinite(game.playersOnline) && game.playersOnline > 0 ? `<span class="badge badge-ok"><span class="dot dot-live"></span> ${game.playersOnline.toLocaleString()} playing</span>` : ''}
       </div>
       <div class="hero-actions"></div>`;
 

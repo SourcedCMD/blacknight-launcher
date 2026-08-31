@@ -44,6 +44,9 @@ electron/            Main process
     downloader.js    Download queue with resume; real HTTP or simulated
     library.js       Install records, playtime, process launching
     updates.js       Launcher self-update over electron-updater
+    hardware.js      Reads this machine: CPU, GPU, memory, free space
+    requirements.js  Compares a title's requirements against it
+    presence.js      Discord rich presence over the local IPC socket
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -56,6 +59,8 @@ src/                 Renderer (classic scripts, dependency-ordered in index.html
     ui.js            Toasts, modals, confirm, command palette, dropdowns
     components.js    Shared cards, detail modal, action buttons
     fx.js / sound.js Canvas background, pointer glow, UI sounds
+    gamepad.js       Controller navigation over whatever is on screen
+    onboarding.js    First-run setup: install folder, accent, sound
     views/           games, store, plus, downloads, settings, profile
     app.js           Boot sequence, routing, shortcuts, window chrome
 
@@ -64,7 +69,9 @@ scripts/
   make-icon.js       Packs build/icons/*.png into build/icon.ico
 
 test/
-  services.test.js   Store, settings, accounts and install rules
+  services.test.js       Store, settings, accounts and install rules
+  requirements.test.js   Hardware tiers and the "will it run?" verdict
+  scheduling.test.js     Download window, bandwidth yielding, ownership
 
 build/
   icons/             PNG masters, 16–256px
@@ -116,6 +123,54 @@ the launcher never ships a link that goes nowhere.
 
 **A dev run cannot corrupt an installed copy.** `--dev` moves `userData` to its
 own directory, so testing never writes over real accounts, library or queue.
+
+**Ownership is an explicit flag.** It used to be inferred from a library record
+existing, which meant any bookkeeping touch — wishlisting a title, saving
+launch options — silently granted the game. `entry.owned` is now set only by
+`acquire()`, and older records are migrated on first run.
+
+## Features worth knowing about
+
+**Will it run?** The store answers the question the requirements table never
+does. `hardware.js` reads the real CPU, GPU, memory and free space;
+`requirements.js` compares them and reports `recommended`, `minimum`, `below`
+or `unknown`. Memory, storage and OS version are measurable so they get a real
+verdict; CPU and GPU are matched by family and generation, and anything that
+does not parse reports `unknown` rather than guessing. A confident wrong answer
+about a 90 GB install is worse than an honest "compare these yourself".
+
+**Downloads get out of the way.** While a game is running, transfers drop to a
+share of the limit (20% by default) rather than pausing, so a queue still
+finishes over a long session without starving the thing the player sat down to
+do. There is also an optional download window — "only between 01:00 and
+07:00" — which handles wrapping past midnight and resumes on its own.
+
+**Pre-orders pre-load.** A pre-ordered title with a release date can download
+now and stays locked until midnight on release, so nobody spends launch night
+watching a progress bar.
+
+**Out of space is a decision, not a dead end.** A failed install reports how
+much is missing, offers another drive, and lists what could go — never-played
+and longest-idle titles first, with a running total of what each selection
+frees. The same picker lives in Settings under Storage.
+
+**Controller navigation.** `gamepad.js` adds spatial focus movement over
+whatever is already on screen, so every button the mouse can reach a D-pad can
+too. Polling only runs while a pad is connected.
+
+**A mark that is yours.** Each account's `avatarSeed` feeds the same seeded
+generator the key art uses, so every player gets a profile banner nobody else
+has, identical on every machine they sign in from.
+
+**Rich presence.** `presence.js` speaks Discord's local IPC protocol directly
+— two frames, no dependency — and follows the play session the library
+already tracks. Set `CLIENT_ID` to a Discord application ID to enable it; while
+it is empty the settings row says so rather than offering a switch that does
+nothing.
+
+**First run asks three questions.** Install folder, accent and sound. The
+accent step is the only chance most people get to discover that six exist.
+Settings can replay it.
 
 **Security posture.** The renderer runs sandboxed with `contextIsolation` on
 and `nodeIntegration` off. The
@@ -170,3 +225,7 @@ services. Still to connect before a public release:
   redemption reports the service as unavailable.
 - **`BN.links` is empty**, so site, support and legal links stay hidden until
   those pages exist.
+- **Rich presence needs a Discord application ID** (`CLIENT_ID` in
+  `presence.js`) before it can connect.
+- **Live player counts are not populated.** The field exists but no service
+  fills it, so nothing is displayed rather than a number being invented.

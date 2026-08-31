@@ -45,23 +45,33 @@
     BN.fx.initBackground($('#fx'));
     BN.fx.initPointer();
 
+    // Settings decide how the rest of the sequence is paced, so they load
+    // before the ceremony rather than inside it.
+    await BN.state.loadSettings();
+    BN.sound.configure({ enabled: !!BN.state.data.settings.uiSounds, volume: BN.state.data.settings.soundVolume });
+
+    // The boot sequence is worth watching exactly once. After the first run it
+    // resolves as fast as the work allows - a launcher people open daily
+    // should not spend a second and a half admiring itself.
+    const first = !BN.state.data.settings.onboarded;
+    const beat = first ? () => BN.util.sleep(190 + Math.random() * 130) : () => Promise.resolve();
+
     const step = async (index, work) => {
       status.textContent = BOOT_STEPS[index];
       bar.style.width = `${((index + 1) / BOOT_STEPS.length) * 100}%`;
-      const [result] = await Promise.all([work?.(), BN.util.sleep(190 + Math.random() * 130)]);
+      const [result] = await Promise.all([work?.(), beat()]);
       return result;
     };
 
     await step(0);
-    await step(1, () => BN.state.loadSettings());
-    BN.sound.configure({ enabled: !!BN.state.data.settings.uiSounds, volume: BN.state.data.settings.soundVolume });
+    await step(1);
     await step(2);
     await step(3, () => BN.state.loadCatalog());
     const session = await step(4, () => BN.api.auth.session());
     await step(5, () => BN.state.refreshDownloads());
 
     status.textContent = 'Ready';
-    await BN.util.sleep(240);
+    if (first) await BN.util.sleep(240);
 
     registerAppIcon();
 
@@ -128,9 +138,12 @@
     renderConnectivity(BN.state.data.online);
 
     BN.api.app.onNavigate((target) => go(target));
+    BN.gamepad?.init();
 
-    go('games');
+    // Pick up where they left off rather than always landing on Games.
+    go(BN.state.data.settings.lastRoute || 'games');
     BN.sound.play('boot');
+    BN.onboarding?.maybeRun();
   }
 
   function buildNav() {
@@ -435,6 +448,12 @@
     else BN.views[next]?.render();
     BN.views[next]?.onEnter?.();
 
+    // Remembered for the next launch. Profile is a detour rather than a home,
+    // so it is not somewhere anyone wants to be dropped back into.
+    if (next !== 'profile' && BN.state.data.settings.lastRoute !== next) {
+      BN.state.setSettings({ lastRoute: next });
+    }
+
     renderSidebar();
   }
 
@@ -494,6 +513,7 @@
         } },
       { group: 'Actions', label: 'Collapse the sidebar', icon: 'chevronLeft', hint: 'Ctrl B', run: toggleSidebar },
       { group: 'Actions', label: 'Redeem a code', icon: 'sparkles', run: redeemCode },
+      { group: 'Actions', label: 'Keyboard shortcuts', icon: 'keyboard', hint: '?', run: showShortcuts },
       { group: 'Account', label: 'Sign out', icon: 'logout', run: signOut }
     );
 
@@ -512,6 +532,49 @@
 
   const openPalette = () => BN.ui.commandPalette(commands());
 
+  /* --- Shortcut cheatsheet ---------------------------------------------- */
+
+  const SHORTCUTS = [
+    ['Navigation', [
+      ['Ctrl K', 'Search and commands'],
+      ['Ctrl 1 - 4', 'Games, Store, BlackNight+, Downloads'],
+      ['Ctrl ,', 'Settings'],
+      ['Ctrl F', 'Search the store'],
+      ['Ctrl B', 'Collapse the sidebar']
+    ]],
+    ['While a dialog is open', [
+      ['Esc', 'Close it'],
+      ['Tab', 'Move between controls'],
+      ['Enter', 'Confirm']
+    ]],
+    ['Controller', [
+      ['D-pad', 'Move focus'],
+      ['A', 'Select'],
+      ['B', 'Back'],
+      ['LB / RB', 'Previous or next page'],
+      ['Y / Start', 'Search and commands']
+    ]]
+  ];
+
+  /**
+   * Nobody opens Settings to learn a shortcut, so the list lives one keypress
+   * away from wherever they already are.
+   */
+  function showShortcuts() {
+    BN.ui.modal({
+      title: 'Keyboard and controller',
+      wide: true,
+      content: `<div class="cheats">${SHORTCUTS.map(
+        ([group, rows]) => `
+          <section>
+            <h3 class="eyebrow">${esc(group)}</h3>
+            ${rows.map(([keys, what]) => `<div class="cheat"><kbd>${esc(keys)}</kbd><span>${esc(what)}</span></div>`).join('')}
+          </section>`
+      ).join('')}</div>`,
+      footer: [{ label: 'Close', class: 'btn-accent', onClick: ({ close }) => close() }]
+    });
+  }
+
   function wireShortcuts() {
     document.addEventListener('keydown', (e) => {
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
@@ -522,6 +585,9 @@
         return openPalette();
       }
       if (typing) return;
+
+      // Unmodified '?' - the convention every app that has this uses.
+      if (!mod && e.key === '?') { e.preventDefault(); return showShortcuts(); }
 
       if (mod && e.key === '1') { e.preventDefault(); go('games'); }
       else if (mod && e.key === '2') { e.preventDefault(); go('store'); }
@@ -535,7 +601,7 @@
 
   /* --------------------------------------------------------------------- */
 
-  BN.app = { boot, start, go, signOut, openPalette, toggleSidebar };
+  BN.app = { boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts };
 
   document.addEventListener('DOMContentLoaded', () => {
     boot().catch((err) => {

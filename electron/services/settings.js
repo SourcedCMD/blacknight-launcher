@@ -15,6 +15,11 @@ const DEFAULTS = {
   bandwidthLimitMbps: 0, // 0 = unlimited
   pauseOnMetered: true,
   autoUpdateGames: true,
+  yieldWhilePlaying: true,
+  playingBandwidthPercent: 20,
+  downloadWindowEnabled: false,
+  downloadWindowStart: 1, // hour, 24h clock
+  downloadWindowEnd: 7,
   // Launcher behaviour
   autoCheckUpdates: true,
   windowBounds: null,
@@ -29,6 +34,9 @@ const DEFAULTS = {
   rememberMe: true,
   richPresence: true,
   shareStats: false,
+  // Interface
+  lastRoute: 'games',
+
   // Meta
   onboarded: false
 };

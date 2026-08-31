@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('blacknight', {
   library: {
     list: () => call('library:list'),
     stats: () => call('library:stats'),
+    reclaimable: () => call('library:reclaimable'),
     acquire: (id) => call('library:acquire', id),
     install: (id) => call('library:install', id),
     uninstall: (id, opts) => call('library:uninstall', id, opts),
@@ -69,6 +70,16 @@ contextBridge.exposeInMainWorld('blacknight', {
     onProgress: (handler) => on('downloads:progress', handler),
     onChanged: (handler) => on('downloads:changed', handler),
     onCompleted: (handler) => on('downloads:completed', handler)
+  },
+
+  hardware: {
+    probe: () => call('hardware:probe'),
+    check: (gameId) => call('hardware:check', gameId)
+  },
+
+  presence: {
+    status: () => call('presence:status'),
+    setEnabled: (enabled) => call('presence:set-enabled', enabled)
   },
 
   updates: {

@@ -21,6 +21,7 @@
     view.innerHTML = `
       <div class="view-pad">
         <section class="profile-head">
+          <div class="profile-banner" id="profile-banner" aria-hidden="true"></div>
           <div class="avatar avatar-lg avatar-ring">${esc(initials(user?.displayName || user?.handle))}</div>
           <div class="grow">
             <div class="row" style="gap:10px">
@@ -106,7 +107,14 @@
       })
     );
 
+    paintBanner(user);
     BN.fx.reveal(view);
+  }
+
+  /** Fills the header with the sky generated from this account's seed. */
+  function paintBanner(user) {
+    const host = document.getElementById('profile-banner');
+    if (host) host.innerHTML = BN.art.profileBanner(user);
   }
 
   BN.views = BN.views || {};

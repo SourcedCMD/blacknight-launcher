@@ -398,5 +398,24 @@
     return keyArt({ seed: hashString(item.id), hue: 214, motif: 'orbit', w: 800, h: 500, detail: 0.6 });
   }
 
-  BN.art = { logo, keyArt, hero, poster, thumb, banner, newsArt, MOTIFS };
+  /**
+   * A banner nobody else has.
+   *
+   * Every account already carries an avatarSeed, and the key-art generator is
+   * deterministic, so the same player gets the same sky on every machine and
+   * a different one from everybody else - identity for the cost of a hash.
+   */
+  function profileBanner(user, w = 1800, h = 420) {
+    const seed = hashString(String(user?.avatarSeed || user?.handle || 'guest'));
+    const pick = rng(seed);
+    const motif = MOTIFS[Math.floor(pick() * MOTIFS.length)];
+    // Skip the warm end of the wheel: this sits behind chrome text.
+    const hue = Math.floor(150 + pick() * 150);
+    return keyArt({ seed, hue, motif, w, h, detail: 0.55 });
+  }
+
+  /** Square version of the same sky, for avatars. */
+  const profileAvatar = (user, size = 96) => profileBanner(user, size, size);
+
+  BN.art = { logo, keyArt, hero, poster, thumb, banner, newsArt, profileBanner, profileAvatar, MOTIFS };
 })();

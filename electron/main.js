@@ -8,6 +8,9 @@ const { Auth } = require('./services/auth');
 const { Downloader } = require('./services/downloader');
 const { Library } = require('./services/library');
 const { Updates } = require('./services/updates');
+const { Hardware } = require('./services/hardware');
+const { Presence } = require('./services/presence');
+const { check: checkRequirements } = require('./services/requirements');
 
 const isDev = process.argv.includes('--dev');
 
@@ -17,7 +20,7 @@ if (isDev) app.setPath('userData', `${app.getPath('userData')} (dev)`);
 
 let win = null;
 let tray = null;
-let settings, auth, downloader, library, catalog, updates;
+let settings, auth, downloader, library, catalog, updates, hardware, presence;
 let quitting = false;
 let dataDir;
 
@@ -76,6 +79,20 @@ function bootServices() {
   downloader = new Downloader(dataDir, settings);
   library = new Library(dataDir, catalog, downloader, settings, { allowSimulated: !app.isPackaged });
   updates = new Updates({ packaged: app.isPackaged, autoCheck: settings.get('autoCheckUpdates') !== false });
+  hardware = new Hardware(app, settings);
+  presence = new Presence({ enabled: settings.get('richPresence') !== false });
+
+  // Rich presence follows the play session the library already tracks.
+  library.onSessionChange = (gameId, running) => {
+    const game = catalog.games.find((g) => g.id === gameId);
+    if (!running) return presence.clear();
+    presence.setActivity({
+      title: game?.title || 'a BlackNight title',
+      details: game?.tagline || undefined,
+      startedAt: Date.now()
+    });
+  };
+  presence.connect();
 
   const forward = (channel) => (payload) => {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -261,6 +278,7 @@ function registerIpc() {
   handle('catalog:get', () => catalog);
   handle('library:list', () => library.list());
   handle('library:stats', () => library.stats());
+  handle('library:reclaimable', () => library.reclaimable());
   handle('library:acquire', (id) => library.acquire(id));
   handle('library:install', (id) => library.install(id));
   handle('library:uninstall', (id, opts) => library.uninstall(id, opts));
@@ -279,6 +297,21 @@ function registerIpc() {
   handle('downloads:clear-finished', () => downloader.clearFinished());
 
   /* Shell / system --------------------------------------------------- */
+  /* Hardware + requirements ------------------------------------------ */
+  handle('hardware:probe', () => hardware.probe());
+  handle('hardware:check', async (gameId) => {
+    const game = catalog.games.find((g) => g.id === gameId);
+    if (!game?.requirements) return { level: 'unknown', minimum: null, recommended: null };
+    return checkRequirements(game.requirements, await hardware.probe());
+  });
+
+  /* Rich presence ----------------------------------------------------- */
+  handle('presence:status', () => presence.status());
+  handle('presence:set-enabled', (enabled) => {
+    settings.set('richPresence', !!enabled);
+    return presence.setEnabled(enabled);
+  });
+
   /* Launcher updates ------------------------------------------------- */
   handle('updates:get', () => updates.get());
   handle('updates:check', () => updates.check());
@@ -386,5 +419,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     quitting = true;
     downloader?.shutdown();
+    presence?.disconnect();
   });
 }

@@ -29,6 +29,10 @@ class Downloader extends EventEmitter {
     this.store = new Store(dir, 'downloads', { items: [] });
     this.active = new Map(); // id -> runtime handle (never persisted)
     this.timer = null;
+    this.windowTimer = null;
+    // Set by the library while a game is running, so transfers can get out of
+    // the way of the thing the player actually sat down to do.
+    this.gameRunning = false;
 
     // Anything caught mid-flight by a shutdown comes back as paused, not broken.
     for (const item of this.store.get('items')) {
@@ -161,6 +165,25 @@ class Downloader extends EventEmitter {
     const running = items.filter((i) => i.status === 'downloading').length;
     let slots = limit - running;
 
+    // Outside the download window nothing new starts, and anything already
+    // moving is put back in the queue to resume when the window opens.
+    const open = this.withinWindow();
+    if (!open) {
+      for (const item of items) {
+        if (item.status !== 'downloading') continue;
+        this._stopRuntime(item.id, { keepStatus: true });
+        item.status = 'queued';
+      }
+      this.store.save();
+      if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+      }
+      this._watchWindow();
+      this.emit('changed', this.list());
+      return;
+    }
+
     for (const item of items) {
       if (slots <= 0) break;
       if (item.status !== 'queued') continue;
@@ -175,6 +198,19 @@ class Downloader extends EventEmitter {
       clearInterval(this.timer);
       this.timer = null;
     }
+  }
+
+  /** Re-checks the schedule every minute so the queue starts on its own. */
+  _watchWindow() {
+    if (this.windowTimer) return;
+    this.windowTimer = setInterval(() => {
+      if (!this.withinWindow()) return;
+      clearInterval(this.windowTimer);
+      this.windowTimer = null;
+      this._pump();
+    }, 60_000);
+    // Never hold the process open just to watch a clock.
+    this.windowTimer.unref?.();
   }
 
   _start(item) {
@@ -202,7 +238,48 @@ class Downloader extends EventEmitter {
 
   _limitBps() {
     const mbps = Number(this.settings.get('bandwidthLimitMbps')) || 0;
-    return mbps > 0 ? (mbps * 1_000_000) / 8 : 0;
+    let limit = mbps > 0 ? (mbps * 1_000_000) / 8 : 0;
+
+    // A download that starves a running game is the fastest way to get a
+    // launcher uninstalled. Drop to a trickle instead of pausing, so a queue
+    // still finishes over a long session.
+    if (this.gameRunning && this.settings.get('yieldWhilePlaying') !== false) {
+      const share = Number(this.settings.get('playingBandwidthPercent')) || 20;
+      const ceiling = limit || 25_000_000; // assume ~200 Mbit when uncapped
+      limit = Math.max(256 * 1024, (ceiling * share) / 100);
+    }
+
+    return limit;
+  }
+
+  /**
+   * Called by the library when a game starts or stops. Rate limits are read
+   * per tick, so the change takes effect on the next one - no restart needed.
+   */
+  setGameRunning(running) {
+    const next = !!running;
+    if (next === this.gameRunning) return;
+    this.gameRunning = next;
+    this.emit('changed', this.list());
+  }
+
+  /**
+   * Whether transfers are allowed to run right now.
+   *
+   * An empty or equal window means "any time". A window that wraps past
+   * midnight (23:00 to 07:00) is the normal case for this feature, so the
+   * comparison has to handle the wrap rather than assuming start < end.
+   */
+  withinWindow(now = new Date()) {
+    if (!this.settings.get('downloadWindowEnabled')) return true;
+    const start = Number(this.settings.get('downloadWindowStart'));
+    const end = Number(this.settings.get('downloadWindowEnd'));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) return true;
+
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    const from = start * 60;
+    const to = end * 60;
+    return from < to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
   }
 
   /** Paced writer that produces a correctly sized file without a CDN. */
@@ -343,6 +420,8 @@ class Downloader extends EventEmitter {
   }
 
   shutdown() {
+    clearInterval(this.windowTimer);
+    this.windowTimer = null;
     for (const id of [...this.active.keys()]) this._stopRuntime(id);
     if (this.timer) clearInterval(this.timer);
     this.timer = null;

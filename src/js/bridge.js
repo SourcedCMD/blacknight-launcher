@@ -135,7 +135,7 @@
   function entryFor(gameId) {
     if (!db.entries[gameId]) {
       db.entries[gameId] = {
-        gameId, status: 'not-installed', version: null, path: null, installedAt: null,
+        gameId, owned: false, status: 'not-installed', version: null, path: null, installedAt: null,
         playtimeSeconds: 0, lastPlayed: null, favorite: false, launchArgs: '', addedAt: Date.now()
       };
     }
@@ -151,7 +151,7 @@
       const download = downloads.find((d) => d.gameId === game.id && d.status !== 'completed') || null;
       return {
         ...game,
-        owned: !!entry,
+        owned: !!entry?.owned,
         installed: entry?.status === 'installed',
         installState: entry?.status || 'not-installed',
         installPath: entry?.path || null,
@@ -264,6 +264,18 @@
     },
 
     library: {
+      async reclaimable() {
+        return Object.values(db.entries)
+          .filter((e) => e.status === 'installed')
+          .map((e) => {
+            const game = catalog.games.find((g) => g.id === e.gameId) || {};
+            return {
+              gameId: e.gameId, title: game.title || e.gameId, sizeBytes: game.sizeBytes || 0,
+              playtimeSeconds: e.playtimeSeconds || 0, lastPlayed: e.lastPlayed || null,
+              idleDays: e.lastPlayed ? Math.floor((Date.now() - e.lastPlayed) / 86400000) : null
+            };
+          });
+      },
       async list() { await catalogReady; return libraryList(); },
       async stats() {
         const entries = Object.values(db.entries);
@@ -279,6 +291,7 @@
       },
       async acquire(id) {
         const entry = entryFor(id);
+        entry.owned = true;
         if (entry.status === 'not-installed') entry.status = 'owned';
         save();
         return ok();
@@ -368,6 +381,20 @@
       onProgress: (fn) => { listeners.progress.push(fn); return () => {}; },
       onChanged: (fn) => { listeners.changed.push(fn); return () => {}; },
       onCompleted: (fn) => { listeners.completed.push(fn); return () => {}; }
+    },
+
+    // A browser cannot see the real machine, so the requirements check
+    // reports 'unknown' rather than inventing a verdict.
+    hardware: {
+      async probe() {
+        return { os: 'Browser preview', platform: 'web', arch: 'n/a', cpu: null, cpuCores: navigator.hardwareConcurrency || null, ramBytes: null, gpu: null, freeBytes: null };
+      },
+      async check() { return { level: 'unknown', minimum: null, recommended: null }; }
+    },
+
+    presence: {
+      async status() { return { state: 'unconfigured' }; },
+      async setEnabled() { return { state: 'unconfigured' }; }
     },
 
     // The browser preview has nothing to update, so the panel reports the

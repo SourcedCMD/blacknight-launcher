@@ -20,6 +20,7 @@ class Library {
     this.sessions = new Map(); // gameId -> { pid, startedAt }
 
     this.downloader.on('completed', (item) => this._onDownloadComplete(item));
+    this._migrateOwnership();
   }
 
   installDir() {
@@ -38,7 +39,7 @@ class Library {
       const download = downloads.find((d) => d.gameId === game.id && d.status !== 'completed') || null;
       return {
         ...game,
-        owned: !!entry,
+        owned: !!entry?.owned,
         installed: entry?.status === 'installed',
         installState: entry?.status || 'not-installed',
         installPath: entry?.path || null,
@@ -57,11 +58,25 @@ class Library {
     return this.list().find((g) => g.id === gameId) || null;
   }
 
+  /** Backfills the explicit owned flag for entries written by older builds. */
+  _migrateOwnership() {
+    const entries = this.store.get('entries');
+    let changed = false;
+    for (const entry of Object.values(entries)) {
+      if (entry.owned === undefined) {
+        entry.owned = entry.status !== 'not-installed';
+        changed = true;
+      }
+    }
+    if (changed) this.store.save();
+  }
+
   _entry(gameId) {
     const entries = this.store.get('entries');
     if (!entries[gameId]) {
       entries[gameId] = {
         gameId,
+        owned: false,
         status: 'not-installed',
         version: null,
         path: null,
@@ -81,6 +96,7 @@ class Library {
     const game = this.catalog.games.find((g) => g.id === gameId);
     if (!game) return { ok: false, error: 'Unknown title.' };
     const entry = this._entry(gameId);
+    entry.owned = true;
     if (entry.status === 'not-installed') entry.status = 'owned';
     this.store.save();
     return { ok: true, library: this.list() };
@@ -89,8 +105,18 @@ class Library {
   install(gameId) {
     const game = this.catalog.games.find((g) => g.id === gameId);
     if (!game) return { ok: false, error: 'Unknown title.' };
-    if (game.status !== 'released')
+
+    // Pre-orders can be pre-loaded: the download runs now and the title stays
+    // locked until its release date, so nobody spends launch night waiting on
+    // 90 GB. Anything further out than a pre-order has no build to fetch.
+    const preload = game.status === 'preorder' && Library.unlockAt(game) !== null;
+    if (game.status !== 'released' && !preload)
       return { ok: false, error: `${game.title} has not been released yet.` };
+    // Reading the map directly: _entry() would create the record and, before
+    // the owned flag existed, that alone counted as owning the game.
+    if (preload && !this.store.get('entries')[gameId]?.owned) {
+      return { ok: false, error: `Pre-order ${game.title} to pre-load it.` };
+    }
 
     const entry = this._entry(gameId);
     if (entry.status === 'installed') return { ok: false, error: 'Already installed.' };
@@ -112,8 +138,19 @@ class Library {
     }
 
     const free = this._freeSpace(dir);
-    if (free !== null && free < game.sizeBytes)
-      return { ok: false, error: 'Not enough free space on the selected drive.' };
+    if (free !== null && free < game.sizeBytes) {
+      // Hand back the numbers and something to uninstall, so the renderer can
+      // offer a way out instead of a dead end.
+      return {
+        ok: false,
+        reason: 'no-space',
+        error: 'Not enough free space on the selected drive.',
+        needBytes: game.sizeBytes,
+        freeBytes: free,
+        dir,
+        reclaimable: this.reclaimable()
+      };
+    }
 
     entry.status = 'downloading';
     entry.path = path.join(dir, gameId);
@@ -209,6 +246,11 @@ class Library {
     if (!entry || entry.status !== 'installed') return { ok: false, error: 'That title is not installed.' };
     if (this.sessions.has(gameId)) return { ok: false, error: 'Already running.' };
 
+    const unlock = Library.unlockAt(game);
+    if (unlock !== null && Date.now() < unlock) {
+      return { ok: false, error: `${game.title} unlocks on ${new Date(unlock).toLocaleString()}.`, lockedUntil: unlock };
+    }
+
     const exe = entry.executable || path.join(entry.path, `${gameId}.exe`);
     if (!fs.existsSync(exe)) {
       // The demo ships as data only until a real build is dropped in; record
@@ -223,7 +265,7 @@ class Library {
     }
 
     try {
-      const args = (entry.launchArgs || '').split(' ').filter(Boolean);
+      const args = this._argsFor(entry).split(' ').filter(Boolean);
       const child = spawn(exe, args, { cwd: entry.path, detached: true, stdio: 'ignore' });
       child.unref();
       this._beginSession(gameId, child.pid);
@@ -236,6 +278,8 @@ class Library {
 
   _beginSession(gameId, pid) {
     this.sessions.set(gameId, { pid, startedAt: Date.now() });
+    this.downloader.setGameRunning?.(true);
+    this.onSessionChange?.(gameId, true);
     const entry = this._entry(gameId);
     entry.lastPlayed = Date.now();
     const recent = this.store.get('recent').filter((id) => id !== gameId);
@@ -250,6 +294,8 @@ class Library {
     const entry = this._entry(gameId);
     entry.playtimeSeconds += Math.round((Date.now() - session.startedAt) / 1000);
     this.store.save();
+    this.downloader.setGameRunning?.(this.sessions.size > 0);
+    this.onSessionChange?.(gameId, false);
     return { ok: true, library: this.list() };
   }
 
@@ -260,12 +306,62 @@ class Library {
     return { ok: true, library: this.list() };
   }
 
-  setLaunchOptions(gameId, { launchArgs, executable }) {
+  setLaunchOptions(gameId, { launchArgs, executable, profiles, activeProfile }) {
     const entry = this._entry(gameId);
     if (launchArgs !== undefined) entry.launchArgs = String(launchArgs).slice(0, 500);
     if (executable !== undefined) entry.executable = executable || null;
+
+    // Named argument sets - "Benchmark", "Modded", "Safe mode" - so switching
+    // does not mean retyping a flag string from memory every time.
+    if (profiles !== undefined) {
+      entry.profiles = (Array.isArray(profiles) ? profiles : [])
+        .filter((p) => p && p.name)
+        .slice(0, 12)
+        .map((p) => ({ name: String(p.name).slice(0, 40), args: String(p.args || '').slice(0, 500) }));
+    }
+    if (activeProfile !== undefined) entry.activeProfile = activeProfile ? String(activeProfile).slice(0, 40) : null;
+
     this.store.save();
     return { ok: true, library: this.list() };
+  }
+
+  /** Arguments for the profile currently selected, falling back to the plain field. */
+  _argsFor(entry) {
+    const profile = (entry.profiles || []).find((p) => p.name === entry.activeProfile);
+    return (profile ? profile.args : entry.launchArgs) || '';
+  }
+
+  /** Release instant for a title that unlocks on a date, or null if it is open. */
+  static unlockAt(game) {
+    if (!game || game.status !== 'preorder' || !game.releaseDate) return null;
+    const at = Date.parse(`${game.releaseDate}T00:00:00`);
+    return Number.isFinite(at) ? at : null;
+  }
+
+  /**
+   * Installed titles ranked by how safe they look to remove: never played
+   * first, then longest untouched. Used to turn "not enough space" into a
+   * decision the player can actually make.
+   */
+  reclaimable() {
+    const entries = this.store.get('entries');
+    return this.catalog.games
+      .filter((game) => entries[game.id]?.status === 'installed')
+      .map((game) => {
+        const entry = entries[game.id];
+        return {
+          gameId: game.id,
+          title: game.title,
+          sizeBytes: game.sizeBytes,
+          playtimeSeconds: entry.playtimeSeconds || 0,
+          lastPlayed: entry.lastPlayed || null,
+          idleDays: entry.lastPlayed ? Math.floor((Date.now() - entry.lastPlayed) / 86400000) : null
+        };
+      })
+      .sort((a, b) => {
+        if (!a.playtimeSeconds !== !b.playtimeSeconds) return a.playtimeSeconds ? 1 : -1;
+        return (b.idleDays ?? 1e9) - (a.idleDays ?? 1e9);
+      });
   }
 
   stats() {

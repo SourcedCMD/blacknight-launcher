@@ -113,7 +113,8 @@
         toggle('exitOnGameLaunch', 'Close the launcher when a game starts', 'Frees memory while you play.'),
         toggle('showPlaytime', 'Track playtime', 'Records how long each session lasts and shows it in your library.'),
         toggle('autoUpdateGames', 'Update games automatically', 'Downloads patches as soon as they are published.')
-      )
+      ),
+      group('Setup', null, replayOnboardingRow())
     ];
   }
 
@@ -218,8 +219,20 @@
           step: 10,
           format: (v) => (v === 0 ? 'Unlimited' : `${v} Mbps`)
         }),
-        toggle('pauseOnMetered', 'Pause on metered connections', 'Stops large downloads eating a mobile data allowance.')
+        toggle('pauseOnMetered', 'Pause on metered connections', 'Stops large downloads eating a mobile data allowance.'),
+        toggle(
+          'yieldWhilePlaying',
+          'Slow downloads while a game is running',
+          'A queue that starves the game you are playing is worse than a queue that finishes late.'
+        ),
+        slider('playingBandwidthPercent', 'Speed while playing', 'Share of the limit downloads may use mid-session.', {
+          min: 5,
+          max: 100,
+          step: 5,
+          format: (v) => `${v}%`
+        })
       ),
+      group('Schedule', 'Hold transfers until the small hours.', ...windowRows()),
       group(
         'Storage',
         null,
@@ -232,9 +245,108 @@
             b.addEventListener('click', () => BN.app.go('profile'));
             return b;
           })()
+        ),
+        row(
+          'Free up space',
+          'Shows what is installed, least-played first.',
+          (() => {
+            const b = el('button', { class: 'btn btn-sm btn-ghost' });
+            b.innerHTML = `${icon('trash')} Review`;
+            b.addEventListener('click', reviewStorage);
+            return b;
+          })()
         )
       )
     ];
+  }
+
+  /**
+   * Standalone version of the reclaim picker, for when someone is tidying up
+   * rather than reacting to a failed install.
+   */
+  async function reviewStorage() {
+    const items = await BN.api.library.reclaimable();
+    if (!items.length) {
+      BN.ui.toast('Nothing installed', 'There is nothing taking up space yet.', { kind: 'info' });
+      return;
+    }
+
+    const body = el('div');
+    body.innerHTML = `<p class="dim" style="line-height:1.7">Never-played and long-idle titles first.</p>`;
+    const list = el('div', { class: 'col', style: { gap: '8px', marginTop: '14px' } });
+
+    for (const item of items) {
+      const idle =
+        item.playtimeSeconds === 0
+          ? 'never played'
+          : item.idleDays === null
+            ? 'not played recently'
+            : `idle ${item.idleDays} days`;
+      const rowNode = el('label', { class: 'reclaim-row' });
+      rowNode.innerHTML = `
+        <input type="checkbox" data-game="${esc(item.gameId)}" data-size="${item.sizeBytes}">
+        <span class="grow">
+          <span class="reclaim-title">${esc(item.title)}</span>
+          <span class="reclaim-meta">${esc(idle)}</span>
+        </span>
+        <span class="mono">${esc(bytes(item.sizeBytes))}</span>`;
+      list.append(rowNode);
+    }
+
+    const tally = el('div', { class: 'reclaim-tally', text: 'Select titles to free space' });
+    list.append(tally);
+    list.addEventListener('change', () => {
+      const freed = [...list.querySelectorAll('input:checked')].reduce((sum, i) => sum + Number(i.dataset.size), 0);
+      tally.textContent = freed ? `Frees ${bytes(freed)}` : 'Select titles to free space';
+      tally.classList.toggle('enough', freed > 0);
+    });
+    body.append(list);
+
+    BN.ui.modal({
+      title: 'Free up space',
+      content: body,
+      footer: [
+        { label: 'Close', class: 'btn-ghost', onClick: ({ close }) => close() },
+        {
+          label: 'Uninstall selected',
+          class: 'btn-danger',
+          onClick: async ({ close, body: root }) => {
+            const picked = [...root.querySelectorAll('input:checked')].map((i) => i.dataset.game);
+            if (!picked.length) return;
+            close();
+            for (const id of picked) await BN.state.uninstall(id);
+            BN.ui.toast('Space reclaimed', `${picked.length} title${picked.length > 1 ? 's' : ''} removed.`, { kind: 'ok' });
+            render();
+          }
+        }
+      ]
+    });
+  }
+
+  /** Download window controls, hidden until the window is switched on. */
+  function windowRows() {
+    const settings = BN.state.data.settings;
+    const hours = Array.from({ length: 24 }, (_, h) => [h, `${String(h).padStart(2, '0')}:00`]);
+
+    const rows = [
+      toggle('downloadWindowEnabled', 'Only download during a set window', 'Outside it the queue waits, and resumes on its own.', () => render())
+    ];
+
+    if (settings.downloadWindowEnabled) {
+      rows.push(
+        select('downloadWindowStart', 'Start', null, hours),
+        select('downloadWindowEnd', 'End', 'A window that ends before it starts runs overnight.', hours)
+      );
+    }
+    return rows;
+  }
+
+  /** Lets someone see the first-run flow again, mostly to change the accent. */
+  function replayOnboardingRow() {
+    const b = el('button', { class: 'btn btn-sm btn-ghost' });
+    b.innerHTML = `${icon('sparkles')} Run setup`;
+    b.addEventListener('click', () => BN.onboarding?.run());
+    return row('First-run setup', 'Walk through install folder, accent and sound again.', b);
   }
 
   function accountSection() {
@@ -280,6 +392,53 @@
     ];
   }
 
+  /**
+   * Rich presence, reporting what it is actually doing.
+   *
+   * A toggle that silently does nothing is worse than no toggle, so this
+   * reads the real connection state: whether a Discord application has been
+   * configured, and whether the local client answered.
+   */
+  const PRESENCE_COPY = {
+    unconfigured: 'No Discord application is configured for this build, so nothing is shared.',
+    off: 'Your current title stays on this machine.',
+    waiting: 'Waiting for Discord. Nothing is shared until it is running.',
+    connected: 'Connected to Discord. Your current title shows on your profile.'
+  };
+
+  function presenceRow() {
+    const node = el('div', { class: 'set-row' });
+
+    const paint = (status) => {
+      const enabled = BN.state.data.settings.richPresence && status.state !== 'unconfigured';
+      node.innerHTML = `
+        <div class="grow">
+          <div class="label">Share what I am playing</div>
+          <div class="desc">${esc(PRESENCE_COPY[status.state] || PRESENCE_COPY.off)}</div>
+        </div>`;
+
+      const control = el('div', { class: 'control' });
+      const box = el('button', {
+        class: 'switch',
+        role: 'switch',
+        'aria-checked': String(enabled),
+        'aria-label': 'Share what I am playing',
+        disabled: status.state === 'unconfigured'
+      });
+      box.addEventListener('click', async () => {
+        const next = !BN.state.data.settings.richPresence;
+        await BN.state.setSettings({ richPresence: next });
+        paint(await BN.api.presence.setEnabled(next));
+      });
+      control.append(box);
+      node.append(control);
+    };
+
+    paint({ state: 'off' });
+    BN.api.presence.status().then(paint);
+    return node;
+  }
+
   function privacySection() {
     const resetBtn = el('button', { class: 'btn btn-sm btn-danger' });
     resetBtn.innerHTML = `${icon('refresh')} Reset settings`;
@@ -301,7 +460,7 @@
       group(
         'Presence and data',
         'BlackNight keeps this local unless you turn it on.',
-        toggle('richPresence', 'Share what I am playing', 'Shows your current title to friends.'),
+        presenceRow(),
         toggle('shareStats', 'Send anonymous usage data', 'Crash reports and performance counters only. Never account details.'),
         toggle('rememberMe', 'Stay signed in', 'Keeps your session on this machine between launches.')
       ),

@@ -18,9 +18,26 @@
     'coming-soon': 'Coming soon'
   };
 
+  /** Release instant for a pre-order, or null once a title is simply out. */
+  function unlockAt(game) {
+    if (game.status !== 'preorder' || !game.releaseDate) return null;
+    const at = Date.parse(`${game.releaseDate}T00:00:00`);
+    return Number.isFinite(at) ? at : null;
+  }
+
+  const isLocked = (game) => {
+    const at = unlockAt(game);
+    return at !== null && Date.now() < at;
+  };
+
   /** The single source of truth for what a title's main button should do. */
   function primaryAction(game) {
     if (game.running) return { key: 'running', label: 'Running', icon: 'zap', variant: 'btn-ghost', disabled: true };
+
+    // A pre-loaded pre-order sits installed but locked until release night.
+    if (game.installed && isLocked(game)) {
+      return { key: 'locked', label: 'Unlocks soon', icon: 'clock', variant: 'btn-ghost', disabled: true };
+    }
     if (game.installed) return { key: 'play', label: 'Play', icon: 'play', variant: 'btn-play' };
     if (game.download) {
       return game.download.status === 'paused'
@@ -31,7 +48,13 @@
       if (!game.owned && game.price.usd > 0) return { key: 'buy', label: money(game.price.usd), icon: 'store', variant: 'btn-chrome' };
       return { key: 'install', label: game.owned ? 'Install' : 'Get', icon: 'download', variant: 'btn-chrome' };
     }
-    if (game.status === 'preorder') return { key: 'preorder', label: 'Pre-order', icon: 'sparkles', variant: 'btn-chrome' };
+    if (game.status === 'preorder') {
+      // Owning it early is the whole point: stage the build now so release
+      // night is not spent watching a progress bar.
+      return game.owned
+        ? { key: 'install', label: 'Pre-load', icon: 'download', variant: 'btn-chrome' }
+        : { key: 'preorder', label: 'Pre-order', icon: 'sparkles', variant: 'btn-chrome' };
+    }
     return { key: 'wishlist', label: game.favorite ? 'Wishlisted' : 'Wishlist', icon: 'heart', variant: 'btn-ghost' };
   }
 
@@ -54,10 +77,12 @@
       case 'install': {
         const result = await BN.state.install(game.id);
         if (result.ok) {
-          BN.ui.toast('Download started', `${game.title} - ${bytes(game.sizeBytes)}`, {
+          BN.ui.toast(isLocked(game) ? 'Pre-load started' : 'Download started', `${game.title} - ${bytes(game.sizeBytes)}`, {
             kind: 'ok',
             action: { label: 'View queue', onClick: () => BN.app.go('downloads') }
           });
+        } else if (result.reason === 'no-space') {
+          showSpaceProblem(game, result);
         } else {
           BN.ui.toast('Install failed', result.error, { kind: 'error' });
         }
@@ -81,6 +106,11 @@
           now.favorite ? `We will let you know when ${game.title} is playable.` : '',
           { kind: 'ok', ms: 3200 }
         );
+        break;
+      }
+      case 'locked': {
+        const at = unlockAt(game);
+        BN.ui.toast('Not yet', `${game.title} unlocks ${new Date(at).toLocaleString()}.`, { kind: 'info', ms: 5000 });
         break;
       }
       case 'running':
@@ -110,6 +140,7 @@
       const pct = Math.round(game.download.progress * 100);
       return `${game.download.status === 'paused' ? 'Paused' : 'Downloading'} - ${pct}%`;
     }
+    if (game.installed && isLocked(game)) return `Pre-loaded - unlocks ${date(game.releaseDate)}`;
     if (game.installed) return BN.state.data.settings.showPlaytime ? playtime(game.playtimeSeconds) : 'Installed';
     if (game.status === 'released') return `${bytes(game.sizeBytes)} download`;
     const days = countdown(game.releaseDate);
@@ -240,6 +271,9 @@
             <div class="col" style="gap:10px" id="editions"></div>
 
             <h3 class="display" style="margin:26px 0 12px;font-size:.9rem">System requirements</h3>
+            <div id="fit-verdict" class="fit fit-unknown">
+              <span class="fit-dot"></span><span class="fit-text">Checking this machine...</span>
+            </div>
             <table class="spec-table">
               <tbody>
                 ${['os', 'cpu', 'ram', 'gpu', 'storage']
@@ -279,7 +313,7 @@
             }
 
             ${
-              game.playersOnline
+              Number.isFinite(game.playersOnline) && game.playersOnline > 0
                 ? `<div class="panel" style="padding:16px;margin-top:14px" class="row">
                      <div class="row"><span class="dot dot-live" style="color:var(--ok)"></span>
                      <span class="mono">${game.playersOnline.toLocaleString()}</span>
@@ -392,11 +426,172 @@
       manage.append(verify, options, remove);
     }
 
+    paintFitVerdict(body, game.id);
+
     if (focus === 'editions') {
       setTimeout(() => body.querySelector('#editions-head')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 260);
     }
 
     return sheet;
+  }
+
+  /**
+   * "Not enough space" is a dead end. Turn it into a decision: say exactly how
+   * short the drive is, offer another drive, and list what could go - the
+   * never-played and long-idle titles first.
+   */
+  function showSpaceProblem(game, result) {
+    const short = Math.max(0, result.needBytes - result.freeBytes);
+    const candidates = (result.reclaimable || []).filter((r) => r.gameId !== game.id);
+
+    const body = el('div');
+    body.innerHTML = `
+      <p style="color:var(--text-dim);line-height:1.7">
+        <strong>${esc(game.title)}</strong> needs ${esc(bytes(result.needBytes))}, but
+        <span class="mono">${esc(result.dir)}</span> has only ${esc(bytes(result.freeBytes))} free
+        &mdash; ${esc(bytes(short))} short.
+      </p>`;
+
+    if (candidates.length) {
+      const list = el('div', { class: 'col', style: { gap: '8px', marginTop: '16px' } });
+      list.append(el('div', { class: 'eyebrow', text: 'Installed and idle' }));
+      let freed = 0;
+
+      for (const item of candidates.slice(0, 6)) {
+        const row = el('label', { class: 'reclaim-row' });
+        const idle =
+          item.playtimeSeconds === 0
+            ? 'never played'
+            : item.idleDays === null
+              ? 'not played recently'
+              : `idle ${item.idleDays} days`;
+        row.innerHTML = `
+          <input type="checkbox" data-game="${esc(item.gameId)}" data-size="${item.sizeBytes}">
+          <span class="grow">
+            <span class="reclaim-title">${esc(item.title)}</span>
+            <span class="reclaim-meta">${esc(idle)}</span>
+          </span>
+          <span class="mono">${esc(bytes(item.sizeBytes))}</span>`;
+        list.append(row);
+      }
+
+      const tally = el('div', { class: 'reclaim-tally', text: 'Select titles to free space' });
+      list.append(tally);
+      body.append(list);
+
+      list.addEventListener('change', () => {
+        freed = [...list.querySelectorAll('input:checked')].reduce((sum, i) => sum + Number(i.dataset.size), 0);
+        tally.textContent =
+          freed >= short
+            ? `Frees ${bytes(freed)} — enough to install ${game.title}`
+            : `Frees ${bytes(freed)} — still ${bytes(short - freed)} short`;
+        tally.classList.toggle('enough', freed >= short);
+      });
+    }
+
+    BN.ui.modal({
+      title: 'Not enough space',
+      content: body,
+      footer: [
+        { label: 'Close', class: 'btn-ghost', onClick: ({ close }) => close() },
+        {
+          label: 'Change drive',
+          class: 'btn-ghost',
+          onClick: async ({ close }) => {
+            const dir = await BN.api.app.chooseDirectory(result.dir);
+            if (!dir) return;
+            await BN.state.setSettings({ installDir: dir });
+            close();
+            BN.ui.toast('Install folder changed', dir, { kind: 'ok' });
+          }
+        },
+        {
+          label: 'Uninstall selected',
+          class: 'btn-accent',
+          onClick: async ({ close, body: root }) => {
+            const picked = [...root.querySelectorAll('input:checked')].map((i) => i.dataset.game);
+            if (!picked.length) return;
+            close();
+            for (const id of picked) await BN.state.uninstall(id);
+            BN.ui.toast('Space reclaimed', `${picked.length} title${picked.length > 1 ? 's' : ''} removed.`, { kind: 'ok' });
+          }
+        }
+      ]
+    });
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* "Will it run?"                                                         */
+
+  const FIT_COPY = {
+    recommended: ['fit-good', 'Your PC clears the recommended spec'],
+    minimum: ['fit-ok', 'Your PC clears the minimum spec'],
+    below: ['fit-bad', 'Your PC is below the minimum spec'],
+    unknown: ['fit-unknown', 'Not enough is known about this machine to say']
+  };
+
+  /**
+   * Answers the question the requirements table never does. The comparison
+   * runs in the main process, where the real hardware is; anything it could
+   * not measure is reported as unknown rather than guessed at.
+   */
+  async function paintFitVerdict(container, gameId) {
+    const node = container.querySelector('#fit-verdict');
+    if (!node) return;
+
+    let result;
+    try {
+      result = await BN.api.hardware.check(gameId);
+    } catch {
+      result = { level: 'unknown' };
+    }
+    // The sheet is painted before the modal attaches it, so isConnected is not
+    // a useful guard here; bail only if the node was replaced outright.
+    if (!node.parentNode) return;
+
+    const [cls, text] = FIT_COPY[result.level] || FIT_COPY.unknown;
+    node.className = `fit ${cls}`;
+    node.innerHTML = `<span class="fit-dot"></span><span class="fit-text">${esc(text)}</span>`;
+
+    // Name what actually falls short, so "below minimum" is actionable.
+    const failing = (result.minimum?.rows || []).filter((r) => r.status === 'below');
+    if (failing.length) {
+      node.innerHTML += `<span class="fit-why">${esc(failing.map((r) => r.label).join(', '))}</span>`;
+    }
+
+    const detail = el('button', { class: 'fit-more', type: 'button' }, 'Compare');
+    detail.addEventListener('click', () => showFitDetail(gameId, result));
+    node.append(detail);
+  }
+
+  function showFitDetail(gameId, result) {
+    const game = BN.state.game(gameId);
+    const table = (label, tier) =>
+      !tier
+        ? ''
+        : `<h3 class="display" style="margin:18px 0 10px;font-size:.82rem">${label}</h3>
+           <table class="spec-table fit-table"><tbody>
+             ${tier.rows
+               .map(
+                 (r) => `<tr class="fit-row-${r.status}">
+                   <th>${esc(r.label)}</th>
+                   <td>${esc(r.need)}</td>
+                   <td>${esc(r.have)}</td>
+                 </tr>`
+               )
+               .join('')}
+           </tbody></table>`;
+
+    BN.ui.modal({
+      title: `Will ${game.title} run?`,
+      wide: true,
+      content:
+        `<p class="dim" style="line-height:1.7;margin-bottom:4px">Required on the left, this machine on the right. ` +
+        `Processor and graphics are matched by family and generation, so treat them as a guide rather than a benchmark.</p>` +
+        table('Minimum', result.minimum) +
+        table('Recommended', result.recommended),
+      footer: [{ label: 'Close', class: 'btn-accent', onClick: ({ close }) => close() }]
+    });
   }
 
   /* --------------------------------------------------------------------- */
@@ -450,18 +645,67 @@
   }
 
   function launchOptions(game) {
+    // Profiles are named argument sets, so switching between a modded run and
+    // a clean one does not mean retyping a flag string from memory.
+    const profiles = (game.profiles || []).map((p) => ({ ...p }));
+    let active = game.activeProfile || null;
+
     const body = el('div');
     body.innerHTML = `
       <div class="field">
-        <label class="field-label" for="lo-args">Launch arguments</label>
+        <label class="field-label">Profiles</label>
+        <div id="lo-profiles" class="col" style="gap:8px"></div>
+        <button type="button" class="btn btn-sm btn-ghost" id="lo-add" style="margin-top:8px">Add a profile</button>
+        <span class="field-hint">Pick one to use it the next time this title launches.</span>
+      </div>
+      <div class="field" style="margin-top:18px">
+        <label class="field-label" for="lo-args">Default arguments</label>
         <div class="input-wrap"><input class="input" id="lo-args" placeholder="-dx12 -windowed" value="${esc(game.launchArgs || '')}"></div>
-        <span class="field-hint">Passed to the game executable on launch.</span>
+        <span class="field-hint">Used when no profile is selected.</span>
       </div>
       <div class="field" style="margin-top:18px">
         <label class="field-label">Executable</label>
         <div class="path-box"><span id="lo-exe">${esc(game.executable || `${game.installPath || ''}\\${game.id}.exe`)}</span></div>
         <span class="field-hint">Point this at the game build once it is available.</span>
       </div>`;
+
+    const host = body.querySelector('#lo-profiles');
+    const paintProfiles = () => {
+      host.innerHTML = '';
+      if (!profiles.length) {
+        host.append(el('div', { class: 'field-hint', text: 'No profiles yet. The default arguments are used.' }));
+      }
+      profiles.forEach((profile, index) => {
+        const row = el('div', { class: 'profile-row' + (active === profile.name ? ' active' : '') });
+        row.innerHTML = `
+          <input type="radio" name="lo-active" ${active === profile.name ? 'checked' : ''} aria-label="Use ${esc(profile.name)}">
+          <input class="input input-sm profile-name" value="${esc(profile.name)}" placeholder="Name" maxlength="40">
+          <input class="input input-sm mono profile-args" value="${esc(profile.args || '')}" placeholder="-dx12" maxlength="500">
+          <button type="button" class="btn btn-sm btn-ghost btn-icon profile-del" aria-label="Remove">${icon('x')}</button>`;
+
+        row.querySelector('input[type=radio]').addEventListener('change', () => {
+          active = profile.name;
+          paintProfiles();
+        });
+        row.querySelector('.profile-name').addEventListener('input', (e) => {
+          if (active === profile.name) active = e.target.value;
+          profile.name = e.target.value;
+        });
+        row.querySelector('.profile-args').addEventListener('input', (e) => { profile.args = e.target.value; });
+        row.querySelector('.profile-del').addEventListener('click', () => {
+          if (active === profile.name) active = null;
+          profiles.splice(index, 1);
+          paintProfiles();
+        });
+        host.append(row);
+      });
+    };
+    paintProfiles();
+
+    body.querySelector('#lo-add').addEventListener('click', () => {
+      profiles.push({ name: `Profile ${profiles.length + 1}`, args: '' });
+      paintProfiles();
+    });
 
     let exe = game.executable || null;
     BN.ui.modal({
@@ -483,7 +727,12 @@
           label: 'Save',
           class: 'btn-accent',
           onClick: async ({ close }) => {
-            await BN.api.library.setLaunchOptions(game.id, { launchArgs: body.querySelector('#lo-args').value, executable: exe });
+            await BN.api.library.setLaunchOptions(game.id, {
+              launchArgs: body.querySelector('#lo-args').value,
+              executable: exe,
+              profiles: profiles.filter((p) => p.name.trim()),
+              activeProfile: active
+            });
             await BN.state.refreshLibrary();
             BN.ui.toast('Launch options saved', '', { kind: 'ok', ms: 2600 });
             close();
