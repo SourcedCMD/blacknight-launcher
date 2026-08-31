@@ -1,0 +1,153 @@
+/* ==========================================================================
+   BlackNight Launcher - design tokens
+   The whole shell is themed from these. Accent swaps at runtime by setting
+   data-accent on <html>; nothing else needs to know which accent is live.
+   ========================================================================== */
+
+:root {
+  /* Surfaces: near-black, cooled slightly blue so chrome reads as metal ---- */
+  --void: #050509;
+  --abyss: #07070d;
+  --obsidian: #0b0b14;
+  --slate: #12121d;
+  --graphite: #1a1a27;
+  --smoke: #262635;
+
+  --surface-1: rgba(255, 255, 255, 0.028);
+  --surface-2: rgba(255, 255, 255, 0.055);
+  --surface-3: rgba(255, 255, 255, 0.085);
+  --surface-sunk: rgba(0, 0, 0, 0.38);
+
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.17);
+  --line-faint: rgba(255, 255, 255, 0.05);
+
+  /* Text ---------------------------------------------------------------- */
+  --text: #eef1f7;
+  --text-dim: #a8b0c2;
+  --text-mute: #6f7789;
+  --text-faint: #4a5162;
+
+  /* The chrome/metal gradient lifted from the BlackNight mark ------------ */
+  /* Film grain, generated inline so no texture file has to ship */
+  --grain-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+
+  --chrome: linear-gradient(155deg, #ffffff 0%, #cdd4e2 18%, #8d95a8 44%, #f2f5fb 62%, #79808f 80%, #dfe4ee 100%);
+  --chrome-soft: linear-gradient(160deg, #f6f8fc 0%, #b9c0d0 45%, #e9edf5 70%, #8f96a6 100%);
+  --moon: #d8e1f2;
+
+  /* Accent - overridden per theme below --------------------------------- */
+  --accent: #8fb8ff;
+  --accent-2: #5f8fe8;
+  --accent-ink: #04060d;
+  --accent-glow: rgba(143, 184, 255, 0.42);
+  --accent-wash: rgba(143, 184, 255, 0.11);
+
+  /* Status -------------------------------------------------------------- */
+  --ok: #4fd18b;
+  --warn: #ffb340;
+  --danger: #ff5468;
+  --info: #61b6ff;
+
+  /* Type ---------------------------------------------------------------- */
+  --font-display: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI Semibold', 'Franklin Gothic Medium', Impact, sans-serif;
+  --font-body: 'Segoe UI Variable Text', 'Segoe UI', Inter, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Mono', 'Consolas', 'SF Mono', ui-monospace, monospace;
+
+  /* Geometry ------------------------------------------------------------ */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 14px;
+  --r-xl: 22px;
+  --notch: 16px; /* the signature cut corner on BlackNight panels */
+
+  --titlebar-h: 40px;
+  --topnav-h: 66px;
+  --sidebar-w: 268px;
+  --sidebar-w-collapsed: 76px;
+
+  /* Motion -------------------------------------------------------------- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-fast: 140ms;
+  --t-med: 260ms;
+  --t-slow: 520ms;
+
+  /* Elevation ----------------------------------------------------------- */
+  --shadow-1: 0 2px 10px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 12px 34px rgba(0, 0, 0, 0.62);
+  --shadow-3: 0 30px 80px rgba(0, 0, 0, 0.76);
+  --glow: 0 0 0 1px var(--accent-wash), 0 0 26px -6px var(--accent-glow);
+}
+
+/* --- Accent themes ------------------------------------------------------ */
+
+[data-accent='moonlight'] {
+  --accent: #8fb8ff;
+  --accent-2: #4f7fe0;
+  --accent-ink: #040812;
+  --accent-glow: rgba(143, 184, 255, 0.45);
+  --accent-wash: rgba(143, 184, 255, 0.12);
+}
+
+[data-accent='eclipse'] {
+  --accent: #d5dcec;
+  --accent-2: #9099ad;
+  --accent-ink: #08080d;
+  --accent-glow: rgba(213, 220, 236, 0.4);
+  --accent-wash: rgba(213, 220, 236, 0.1);
+}
+
+[data-accent='bloodmoon'] {
+  --accent: #ff5163;
+  --accent-2: #b8172c;
+  --accent-ink: #140407;
+  --accent-glow: rgba(255, 81, 99, 0.45);
+  --accent-wash: rgba(255, 81, 99, 0.12);
+}
+
+[data-accent='nebula'] {
+  --accent: #a97bff;
+  --accent-2: #6f3ed6;
+  --accent-ink: #0c0518;
+  --accent-glow: rgba(169, 123, 255, 0.45);
+  --accent-wash: rgba(169, 123, 255, 0.13);
+}
+
+[data-accent='toxic'] {
+  --accent: #7dffa8;
+  --accent-2: #23b563;
+  --accent-ink: #041209;
+  --accent-glow: rgba(125, 255, 168, 0.4);
+  --accent-wash: rgba(125, 255, 168, 0.11);
+}
+
+[data-accent='ember'] {
+  --accent: #ffab3d;
+  --accent-2: #d1701a;
+  --accent-ink: #150c02;
+  --accent-glow: rgba(255, 171, 61, 0.45);
+  --accent-wash: rgba(255, 171, 61, 0.12);
+}
+
+/* --- Motion preference -------------------------------------------------- */
+
+[data-motion='reduced'] *,
+[data-motion='reduced'] *::before,
+[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='full']) *,
+  :root:not([data-motion='full']) *::before,
+  :root:not([data-motion='full']) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

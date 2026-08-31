@@ -1,0 +1,42 @@
+{
+  "name": "blacknight-launcher",
+  "productName": "BlackNight Launcher",
+  "version": "1.0.0",
+  "description": "The official game launcher for BlackNight Studios.",
+  "author": "BlackNight Studios",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "web": "node scripts/dev-server.js",
+    "icon": "node scripts/make-icon.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^32.2.7",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.blacknightstudios.launcher",
+    "productName": "BlackNight Launcher",
+    "directories": { "output": "release" },
+    "files": ["electron/**/*", "src/**/*", "package.json"],
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico",
+      "artifactName": "BlackNightLauncher-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "BlackNight Launcher",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "BlackNight Launcher"
+    }
+  }
+}

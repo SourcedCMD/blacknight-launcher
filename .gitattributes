@@ -1,0 +1,6 @@
+# Keep LF in the repository; Git checks out native line endings on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.exe binary

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" data-accent="moonlight" data-motion="full">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; media-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlackNight Launcher</title>
+
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/shell.css">
+  <link rel="stylesheet" href="css/views.css">
+</head>
+
+<body>
+  <!-- Ambient layers ------------------------------------------------------->
+  <div id="ambient"></div>
+  <canvas id="fx"></canvas>
+  <div id="cursor-glow"></div>
+
+  <!-- Boot ----------------------------------------------------------------->
+  <div id="boot">
+    <div class="boot-inner">
+      <div id="boot-mark"></div>
+      <div class="boot-word chrome-text" id="boot-word"></div>
+      <div class="boot-sub">Studios</div>
+      <div class="boot-bar" id="boot-bar"><i></i></div>
+      <div class="boot-status" id="boot-status">Starting</div>
+    </div>
+  </div>
+
+  <!-- Authentication -------------------------------------------------------->
+  <div id="auth" class="hidden">
+    <div class="auth-art">
+      <canvas id="auth-canvas"></canvas>
+      <div class="auth-art-inner">
+        <div id="auth-mark"></div>
+        <h1 class="auth-headline chrome-text">Play after dark</h1>
+        <p class="auth-copy">
+          One launcher for every BlackNight Studios title. Your library, your downloads
+          and your progress, wherever the night takes you.
+        </p>
+      </div>
+      <div class="auth-stats">
+        <div class="auth-stat"><div class="n chrome-text">7</div><div class="l">Titles in the slate</div></div>
+        <div class="auth-stat"><div class="n chrome-text">4K</div><div class="l">Umbra engine</div></div>
+        <div class="auth-stat"><div class="n chrome-text">24/7</div><div class="l">Studio support</div></div>
+      </div>
+    </div>
+
+    <div class="auth-panel">
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab" id="auth-tab-signin" role="tab" aria-selected="true">Sign in</button>
+        <button class="auth-tab" id="auth-tab-signup" role="tab" aria-selected="false">Create account</button>
+      </div>
+      <div id="auth-form-host"></div>
+    </div>
+  </div>
+
+  <!-- Application shell ----------------------------------------------------->
+  <div id="app" class="hidden">
+
+    <div class="titlebar">
+      <div class="tb-brand">
+        <span id="tb-mark"></span>
+        <span>BlackNight</span>
+      </div>
+      <div class="tb-status" id="tb-status"><span class="dot"></span><span>Services online</span></div>
+
+      <button class="tb-download no-drag" id="tb-download" data-tip="Download queue" data-tip-side="bottom"></button>
+
+      <div class="win-controls">
+        <button class="win-btn" id="win-min" aria-label="Minimise" data-tip="Minimise" data-tip-side="bottom">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button class="win-btn" id="win-max" aria-label="Maximise" data-tip="Maximise" data-tip-side="bottom">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        </button>
+        <button class="win-btn close" id="win-close" aria-label="Close" data-tip="Close" data-tip-side="bottom">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <nav class="topnav">
+      <div class="nav-logo">
+        <span id="nav-mark"></span>
+        <span class="wordmark">
+          <span class="wm-1 chrome-text">BlackNight</span>
+          <span class="wm-2">Studios</span>
+        </span>
+      </div>
+
+      <div class="nav-links" id="nav-links"></div>
+
+      <div class="nav-right">
+        <button class="nav-search" id="nav-search" aria-label="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>Search</span>
+          <kbd>Ctrl K</kbd>
+        </button>
+        <div class="account">
+          <button class="account-btn" id="account-btn" aria-expanded="false" aria-haspopup="menu"></button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="body-row">
+      <aside class="sidebar" id="sidebar">
+        <div class="side-scroll" id="side-scroll"></div>
+        <div class="side-foot">
+          <button class="side-collapse" id="side-collapse" aria-label="Collapse sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            <span class="side-label" id="side-collapse-label">Collapse</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="view-host">
+        <section class="view hidden" id="view-games"></section>
+        <section class="view hidden" id="view-store"></section>
+        <section class="view hidden" id="view-plus"></section>
+        <section class="view hidden" id="view-downloads"></section>
+        <section class="view hidden" id="view-settings"></section>
+        <section class="view hidden" id="view-profile"></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+  <!-- Scripts: classic, dependency-ordered (file:// blocks ES modules) ------>
+  <script src="js/util.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/bridge.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/views/auth.js"></script>
+  <script src="js/views/games.js"></script>
+  <script src="js/views/store.js"></script>
+  <script src="js/views/plus.js"></script>
+  <script src="js/views/downloads.js"></script>
+  <script src="js/views/settings.js"></script>
+  <script src="js/views/profile.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
