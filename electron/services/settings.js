@@ -11,6 +11,7 @@ const DEFAULTS = {
   soundVolume: 45,
   // Downloads
   installDir: '',
+  libraryFolders: [],
   concurrentDownloads: 1,
   bandwidthLimitMbps: 0, // 0 = unlimited
   pauseOnMetered: true,
@@ -33,9 +34,19 @@ const DEFAULTS = {
   // Account / privacy
   rememberMe: true,
   richPresence: true,
-  shareStats: false,
+  // Whether diagnostic logs may include machine details. Nothing is uploaded
+  // anywhere; this only controls what the local log file records.
+  diagnosticLogs: true,
+  backupSaves: true,
+  saveBackupsKept: 5,
   // Interface
   lastRoute: 'games',
+  locale: 'auto',
+
+  // Content
+  // Empty means "use the copy that shipped with this build". Point it at a
+  // hosted catalog.json to announce titles without shipping an installer.
+  catalogUrl: '',
 
   // Meta
   onboarded: false

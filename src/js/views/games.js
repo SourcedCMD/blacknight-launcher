@@ -109,11 +109,14 @@
       }));
       menu.append(el('div', { class: 'menu-sep' }));
       menu.append(item('Uninstall', 'trash', async () => {
-        const yes = await BN.ui.confirm({ title: `Uninstall ${game.title}?`, message: 'Saves and account progress are kept.', confirmLabel: 'Uninstall', danger: true });
-        if (yes) {
-          await BN.state.uninstall(game.id);
-          BN.ui.toast('Uninstalled', `${game.title} was removed.`, { kind: 'ok' });
-        }
+        const choice = await BN.components.confirmUninstall(game);
+        if (!choice) return;
+        const result = await BN.state.uninstall(game.id, choice);
+        BN.ui.toast(
+          'Uninstalled',
+          result?.savesKept ? `${game.title} was removed. Save data was kept.` : `${game.title} was removed.`,
+          { kind: 'ok' }
+        );
       }, 'danger'));
     }
     BN.ui.dropdown(anchor, menu);

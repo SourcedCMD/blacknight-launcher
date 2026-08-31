@@ -136,8 +136,8 @@
     return result;
   }
 
-  async function uninstall(id) {
-    const result = await BN.api.library.uninstall(id);
+  async function uninstall(id, options) {
+    const result = await BN.api.library.uninstall(id, options);
     await refreshLibrary();
     return result;
   }
@@ -157,6 +157,8 @@
   async function endSession(id) {
     const result = await BN.api.library.endSession(id);
     await refreshLibrary();
+    // A non-zero exit means the launcher has something useful to say.
+    if (result?.crashed) BN.components?.reportCrash(game(id), result);
     return result;
   }
 

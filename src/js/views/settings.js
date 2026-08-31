@@ -114,6 +114,12 @@
         toggle('showPlaytime', 'Track playtime', 'Records how long each session lasts and shows it in your library.'),
         toggle('autoUpdateGames', 'Update games automatically', 'Downloads patches as soon as they are published.')
       ),
+      group(
+        'Save data',
+        'Snapshots stay on this machine; nothing is uploaded.',
+        toggle('backupSaves', 'Back up saves when a game closes', 'Keeps the most recent few versions, so a corrupt save is recoverable.'),
+        slider('saveBackupsKept', 'Snapshots kept per title', null, { min: 1, max: 20, step: 1, format: (v) => `${v}` })
+      ),
       group('Setup', null, replayOnboardingRow())
     ];
   }
@@ -205,6 +211,7 @@
 
     return [
       group('Location', null, pathRow),
+      group('Library folders', 'Install to more than one drive.', foldersRow()),
       group(
         'Bandwidth',
         'Applies to every active transfer in the queue.',
@@ -321,6 +328,65 @@
         }
       ]
     });
+  }
+
+  /**
+   * Every folder games may install into.
+   *
+   * A small SSD and a large HDD is the ordinary PC; one install path was never
+   * going to be enough.
+   */
+  function foldersRow() {
+    const node = el('div', { class: 'set-row stack' });
+
+    const paint = (folders) => {
+      node.innerHTML = '';
+      const list = el('div', { class: 'col', style: { gap: '8px', width: '100%' } });
+
+      for (const folder of folders) {
+        const item = el('div', { class: 'folder-row' });
+        const free = folder.freeBytes === null ? '' : BN.t('folders.freeSpace', { free: bytes(folder.freeBytes) });
+        item.innerHTML = `
+          ${icon('drive')}
+          <span class="grow">
+            <span class="folder-path mono">${esc(folder.dir)}</span>
+            <span class="folder-meta">
+              ${folder.primary ? `<span class="badge badge-accent">${esc(BN.t('folders.primary'))}</span>` : ''}
+              ${esc(BN.t('folders.installedCount', { count: folder.installed }))}
+              ${folder.usedBytes ? ` · ${esc(bytes(folder.usedBytes))} used` : ''}
+              ${free ? ` · ${esc(free)}` : ''}
+            </span>
+          </span>`;
+
+        if (!folder.primary) {
+          const remove = el('button', { class: 'btn btn-sm btn-ghost btn-icon', 'aria-label': 'Remove folder' });
+          remove.innerHTML = icon('x');
+          remove.addEventListener('click', async () => {
+            const result = await BN.api.library.removeFolder(folder.dir);
+            if (!result.ok) return BN.ui.toast('Cannot remove that folder', result.error, { kind: 'warn' });
+            paint(result.folders);
+          });
+          item.append(remove);
+        }
+        list.append(item);
+      }
+
+      const add = el('button', { class: 'btn btn-sm btn-ghost', style: { marginTop: '10px', alignSelf: 'flex-start' } });
+      add.innerHTML = `${icon('folder')} ${esc(BN.t('folders.add'))}`;
+      add.addEventListener('click', async () => {
+        const result = await BN.api.library.addFolder();
+        if (result.cancelled) return;
+        if (!result.ok) return BN.ui.toast('Cannot use that folder', result.error, { kind: 'warn' });
+        paint(result.folders);
+        BN.ui.toast('Library folder added', '', { kind: 'ok', ms: 2600 });
+      });
+
+      node.append(list, add);
+    };
+
+    paint([]);
+    BN.api.library.folders().then(paint);
+    return node;
   }
 
   /** Download window controls, hidden until the window is switched on. */
@@ -461,7 +527,21 @@
         'Presence and data',
         'BlackNight keeps this local unless you turn it on.',
         presenceRow(),
-        toggle('shareStats', 'Send anonymous usage data', 'Crash reports and performance counters only. Never account details.'),
+        toggle(
+          'diagnosticLogs',
+          'Include machine details in logs',
+          'Adds your hardware and OS to the local log file so a support report is useful. Nothing is uploaded anywhere.'
+        ),
+        row(
+          'Launcher logs',
+          'What the launcher recorded on this run and the one before it.',
+          (() => {
+            const b = el('button', { class: 'btn btn-sm btn-ghost' });
+            b.innerHTML = `${icon('folder')} Open logs`;
+            b.addEventListener('click', () => BN.api.log.open());
+            return b;
+          })()
+        ),
         toggle('rememberMe', 'Stay signed in', 'Keeps your session on this machine between launches.')
       ),
       group(

@@ -29,7 +29,7 @@ const OP_CLOSE = 2;
  * here; while it is empty the service stays dormant and the settings toggle
  * explains why.
  */
-const CLIENT_ID = '';
+const CLIENT_ID = '1543980440615129159';
 
 /** Discord probes ipc-0 through ipc-9 to find a running client. */
 function socketPath(index) {

@@ -840,3 +840,32 @@ kbd {
   text-align: center;
 }
 .switch[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* --- Library folders ------------------------------------------------------ */
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  width: 100%;
+}
+.folder-row > svg { flex: none; width: 17px; height: 17px; color: var(--text-mute); }
+.folder-row .grow { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.folder-path {
+  font-size: 0.79rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}

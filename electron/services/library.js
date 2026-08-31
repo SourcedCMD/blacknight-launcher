@@ -1,6 +1,8 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Store } = require('./store');
 
@@ -11,6 +13,7 @@ const { Store } = require('./store');
  */
 class Library {
   constructor(dir, catalog, downloader, settings, { allowSimulated = false } = {}) {
+    this.dir = dir;
     this.catalog = catalog;
     this.downloader = downloader;
     this.settings = settings;
@@ -23,11 +26,73 @@ class Library {
     this._migrateOwnership();
   }
 
+  /**
+   * Every folder games may be installed into.
+   *
+   * A small SSD and a large HDD is the normal PC, so one path was never
+   * enough. `installDir` stays the primary and always leads the list, which
+   * keeps every existing install and setting valid.
+   */
+  libraryFolders() {
+    const primary = this.installDir();
+    const extra = this.settings.get('libraryFolders') || [];
+    const seen = new Set();
+    return [primary, ...extra].filter((dir) => {
+      if (!dir || seen.has(dir)) return false;
+      seen.add(dir);
+      return true;
+    });
+  }
+
+  addLibraryFolder(dir) {
+    if (!dir) return { ok: false, error: 'No folder given.' };
+    if (this.libraryFolders().includes(dir)) return { ok: false, error: 'That folder is already in the list.' };
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      return { ok: false, error: `Cannot use that folder: ${err.message}` };
+    }
+    this.settings.set('libraryFolders', [...(this.settings.get('libraryFolders') || []), dir]);
+    return { ok: true, folders: this.folderStats() };
+  }
+
+  removeLibraryFolder(dir) {
+    if (dir === this.installDir()) return { ok: false, error: 'The primary folder cannot be removed.' };
+    // Anything installed there would be orphaned by dropping the folder.
+    const used = Object.values(this.store.get('entries')).some((e) => e.path && e.path.startsWith(dir));
+    if (used) return { ok: false, error: 'Titles are still installed in that folder.' };
+    this.settings.set('libraryFolders', (this.settings.get('libraryFolders') || []).filter((d) => d !== dir));
+    return { ok: true, folders: this.folderStats() };
+  }
+
+  /** Each folder with how much it holds and how much room is left. */
+  folderStats() {
+    const entries = Object.values(this.store.get('entries'));
+    return this.libraryFolders().map((dir) => {
+      const installed = entries.filter((e) => e.status === 'installed' && e.path && e.path.startsWith(dir));
+      const usedBytes = installed.reduce((sum, e) => {
+        const game = this.catalog.games.find((g) => g.id === e.gameId);
+        return sum + (game?.sizeBytes || 0);
+      }, 0);
+      return {
+        dir,
+        primary: dir === this.installDir(),
+        installed: installed.length,
+        usedBytes,
+        freeBytes: this._freeSpace(dir)
+      };
+    });
+  }
+
   installDir() {
     const configured = this.settings.get('installDir');
     if (configured) return configured;
-    const fallback = path.join(require('electron').app.getPath('documents'), 'BlackNight Studios', 'Games');
-    return fallback;
+    // Matches defaultInstallDir() in main.js: never a cloud-synced folder.
+    const base =
+      process.platform === 'win32'
+        ? process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+        : os.homedir();
+    return path.join(base, 'BlackNight Studios', 'Games');
   }
 
   /** Catalog entry + install state + live download state, merged for the UI. */
@@ -102,7 +167,7 @@ class Library {
     return { ok: true, library: this.list() };
   }
 
-  install(gameId) {
+  install(gameId, { folder = null, kind = 'install' } = {}) {
     const game = this.catalog.games.find((g) => g.id === gameId);
     if (!game) return { ok: false, error: 'Unknown title.' };
 
@@ -119,7 +184,7 @@ class Library {
     }
 
     const entry = this._entry(gameId);
-    if (entry.status === 'installed') return { ok: false, error: 'Already installed.' };
+    if (entry.status === 'installed' && kind !== 'update') return { ok: false, error: 'Already installed.' };
 
     // A catalog entry without a downloadUrl falls back to the simulated
     // writer, which produces a real file of the right size - useful while
@@ -130,7 +195,8 @@ class Library {
       return { ok: false, error: `${game.title} does not have a downloadable build yet.` };
     }
 
-    const dir = this.installDir();
+    // An explicit folder wins, but only if it is one the user actually added.
+    const dir = folder && this.libraryFolders().includes(folder) ? folder : this.installDir();
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch (err) {
@@ -148,6 +214,7 @@ class Library {
         needBytes: game.sizeBytes,
         freeBytes: free,
         dir,
+        folders: this.folderStats(),
         reclaimable: this.reclaimable()
       };
     }
@@ -162,7 +229,9 @@ class Library {
       totalBytes: game.sizeBytes,
       url: game.downloadUrl || null,
       installDir: dir,
-      version: game.version || '1.0.0'
+      version: game.version || '1.0.0',
+      sha256: game.sha256 || null,
+      kind
     });
     return { ok: true, library: this.list() };
   }
@@ -183,7 +252,16 @@ class Library {
       fs.writeFileSync(
         path.join(entry.path, 'blacknight.manifest.json'),
         JSON.stringify(
-          { gameId: entry.gameId, title: item.title, version: entry.version, installedAt: entry.installedAt, sizeBytes: item.totalBytes },
+          {
+            gameId: entry.gameId,
+            title: item.title,
+            version: entry.version,
+            installedAt: entry.installedAt,
+            sizeBytes: item.totalBytes,
+            // Whatever the download engine actually hashed, so a later verify
+            // compares like for like rather than trusting the catalog again.
+            sha256: item.verifiedSha256 || item.sha256 || null
+          },
           null,
           2
         ),
@@ -192,11 +270,99 @@ class Library {
     } catch { /* manifest is a nicety, not a requirement */ }
   }
 
+  /* --- Saves ---------------------------------------------------------- */
+
+  /** Where a title keeps its save data, by convention inside its install. */
+  savePath(entry) {
+    return entry?.path ? path.join(entry.path, 'saves') : null;
+  }
+
+  /** Snapshots live outside the install, so uninstalling cannot take them. */
+  backupRoot(gameId) {
+    return path.join(this.dir, 'saves', gameId);
+  }
+
+  /**
+   * Copies the save folder aside when a session ends.
+   *
+   * Cloud saves need a server; keeping the last few local versions does not,
+   * and it covers the case people actually lose sleep over - a corrupt save
+   * or an uninstall that took more than it should have.
+   */
+  backupSaves(gameId, { keep = 5 } = {}) {
+    const entry = this.store.get('entries')[gameId];
+    const source = this.savePath(entry);
+    if (!source || !fs.existsSync(source)) return { ok: false, reason: 'no-saves' };
+
+    try {
+      const root = this.backupRoot(gameId);
+      fs.mkdirSync(root, { recursive: true });
+      // Epoch milliseconds: sorts correctly as a string and parses back
+      // without a format to get wrong.
+      const stamp = String(Date.now());
+      fs.cpSync(source, path.join(root, stamp), { recursive: true });
+
+      // Keep the most recent few; older ones are noise on someone's drive.
+      const snapshots = fs.readdirSync(root).sort();
+      for (const old of snapshots.slice(0, Math.max(0, snapshots.length - keep))) {
+        fs.rmSync(path.join(root, old), { recursive: true, force: true });
+      }
+      return { ok: true, at: stamp, kept: Math.min(snapshots.length, keep) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  /** Snapshots available for a title, newest first. */
+  saveBackups(gameId) {
+    const root = this.backupRoot(gameId);
+    if (!fs.existsSync(root)) return [];
+    return fs
+      .readdirSync(root)
+      .sort()
+      .reverse()
+      .map((name) => {
+        const dir = path.join(root, name);
+        let bytes = 0;
+        try {
+          for (const file of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
+            if (file.isFile()) bytes += fs.statSync(path.join(file.parentPath || file.path, file.name)).size;
+          }
+        } catch { /* a partial snapshot still lists */ }
+        return { id: name, at: Number(name) || null, bytes };
+      });
+  }
+
+  restoreSave(gameId, snapshotId) {
+    const entry = this.store.get('entries')[gameId];
+    const target = this.savePath(entry);
+    if (!target) return { ok: false, error: 'That title is not installed.' };
+    if (this.sessions.has(gameId)) return { ok: false, error: 'Close the game before restoring a save.' };
+
+    const source = path.join(this.backupRoot(gameId), path.basename(snapshotId || ''));
+    if (!fs.existsSync(source)) return { ok: false, error: 'That snapshot no longer exists.' };
+
+    try {
+      // Take one more snapshot first: restoring is itself a destructive act.
+      this.backupSaves(gameId);
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.cpSync(source, target, { recursive: true });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `Could not restore: ${err.message}` };
+    }
+  }
+
   uninstall(gameId, { keepSaves = true } = {}) {
     const entries = this.store.get('entries');
     const entry = entries[gameId];
     if (!entry) return { ok: false, error: 'Not installed.' };
     if (this.sessions.has(gameId)) return { ok: false, error: 'Close the game before uninstalling.' };
+
+    // Saves live inside the install folder, so they have to be copied out
+    // before it is deleted - otherwise "keep my saves" quietly means nothing.
+    let savedAside = false;
+    if (keepSaves) savedAside = this.backupSaves(gameId).ok;
 
     try {
       if (entry.path && fs.existsSync(entry.path)) fs.rmSync(entry.path, { recursive: true, force: true });
@@ -204,13 +370,18 @@ class Library {
       return { ok: false, error: `Could not remove files: ${err.message}` };
     }
 
+    if (!keepSaves) {
+      try {
+        fs.rmSync(this.backupRoot(gameId), { recursive: true, force: true });
+      } catch { /* nothing to discard */ }
+    }
+
     entry.status = 'owned';
     entry.path = null;
     entry.version = null;
     entry.installedAt = null;
-    if (!keepSaves) entry.playtimeSeconds = 0;
     this.store.save();
-    return { ok: true, library: this.list() };
+    return { ok: true, savesKept: keepSaves && savedAside, library: this.list() };
   }
 
   /** Re-checks the install on disk against its manifest. */
@@ -234,7 +405,31 @@ class Library {
         this.store.save();
         return { ok: false, error: 'Files are incomplete. Reinstall required.', library: this.list() };
       }
-      return { ok: true, message: 'All files verified.', library: this.list() };
+
+      // Only a checksum can actually verify anything. Without one this is a
+      // length check, and saying so beats claiming a guarantee it cannot make.
+      if (!manifest.sha256) {
+        return {
+          ok: true,
+          checked: 'size',
+          message: 'Install looks complete. This build ships no checksum, so only file sizes were checked.',
+          library: this.list()
+        };
+      }
+
+      const actual = require('./downloader').Downloader.hashFile(pak);
+      if (actual !== manifest.sha256) {
+        entry.status = 'owned';
+        this.store.save();
+        return {
+          ok: false,
+          checked: 'checksum',
+          error: 'Files are corrupt: the checksum does not match. Reinstall required.',
+          library: this.list()
+        };
+      }
+
+      return { ok: true, checked: 'checksum', message: 'All files verified against their checksum.', library: this.list() };
     } catch (err) {
       return { ok: false, error: `Verification failed: ${err.message}` };
     }
@@ -269,7 +464,10 @@ class Library {
       const child = spawn(exe, args, { cwd: entry.path, detached: true, stdio: 'ignore' });
       child.unref();
       this._beginSession(gameId, child.pid);
-      child.on?.('exit', () => this.endSession(gameId));
+      // A game that dies on startup used to look exactly like a game someone
+      // quit. Keep the exit code so the launcher can say something useful.
+      child.on?.('exit', (code, signal) => this.endSession(gameId, { code, signal }));
+      child.on?.('error', (err) => this.endSession(gameId, { code: null, error: err.message }));
       return { ok: true, pid: child.pid, library: this.list() };
     } catch (err) {
       return { ok: false, error: `Launch failed: ${err.message}` };
@@ -287,16 +485,30 @@ class Library {
     this.store.set('recent', recent.slice(0, 10));
   }
 
-  endSession(gameId) {
+  endSession(gameId, exit = null) {
     const session = this.sessions.get(gameId);
     if (!session) return { ok: false };
     this.sessions.delete(gameId);
     const entry = this._entry(gameId);
-    entry.playtimeSeconds += Math.round((Date.now() - session.startedAt) / 1000);
+    const seconds = Math.round((Date.now() - session.startedAt) / 1000);
+    entry.playtimeSeconds += seconds;
+
+    // A non-zero code, a signal, or a death inside the first few seconds all
+    // point at a broken install rather than someone deciding to stop playing.
+    const crashed =
+      !!exit && ((typeof exit.code === 'number' && exit.code !== 0) || !!exit.signal || !!exit.error);
+    entry.lastExit = exit
+      ? { code: exit.code ?? null, signal: exit.signal || null, error: exit.error || null, at: Date.now(), seconds }
+      : null;
+
     this.store.save();
     this.downloader.setGameRunning?.(this.sessions.size > 0);
+    if (this.settings.get('backupSaves') !== false) {
+      this.backupSaves(gameId, { keep: Number(this.settings.get('saveBackupsKept')) || 5 });
+    }
     this.onSessionChange?.(gameId, false);
-    return { ok: true, library: this.list() };
+
+    return { ok: true, crashed, exit: entry.lastExit, seconds, library: this.list() };
   }
 
   setFavorite(gameId, favorite) {
@@ -336,6 +548,53 @@ class Library {
     if (!game || game.status !== 'preorder' || !game.releaseDate) return null;
     const at = Date.parse(`${game.releaseDate}T00:00:00`);
     return Number.isFinite(at) ? at : null;
+  }
+
+  /**
+   * Installed titles whose catalog version has moved past what is on disk.
+   *
+   * The catalog is the only source of truth for what the current build is, so
+   * an update is simply a version mismatch - no separate patch feed to keep in
+   * step with it.
+   */
+  outdated() {
+    const entries = this.store.get('entries');
+    return this.catalog.games
+      .filter((game) => {
+        const entry = entries[game.id];
+        if (!entry || entry.status !== 'installed') return false;
+        const current = game.version || '1.0.0';
+        return entry.version && entry.version !== current;
+      })
+      .map((game) => ({
+        gameId: game.id,
+        title: game.title,
+        installedVersion: entries[game.id].version,
+        availableVersion: game.version || '1.0.0',
+        sizeBytes: game.sizeBytes
+      }));
+  }
+
+  /**
+   * Queues updates for everything out of date.
+   *
+   * `auto` reflects the autoUpdateGames setting: when it is off the list is
+   * still reported so the UI can offer the update, it just is not started.
+   */
+  updateAll({ auto = false } = {}) {
+    const pending = this.outdated();
+    if (auto && this.settings.get('autoUpdateGames') === false) {
+      return { ok: true, started: [], pending };
+    }
+
+    const started = [];
+    for (const item of pending) {
+      const entry = this.store.get('entries')[item.gameId];
+      const folder = entry?.path ? path.dirname(entry.path) : null;
+      const result = this.install(item.gameId, { folder, kind: 'update' });
+      if (result.ok) started.push(item.gameId);
+    }
+    return { ok: true, started, pending };
   }
 
   /**

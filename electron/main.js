@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, Tray, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, Tray, Menu, screen, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -11,6 +11,10 @@ const { Updates } = require('./services/updates');
 const { Hardware } = require('./services/hardware');
 const { Presence } = require('./services/presence');
 const { check: checkRequirements } = require('./services/requirements');
+const { Logger } = require('./services/logger');
+const { Catalog } = require('./services/catalog');
+
+const PROTOCOL = 'blacknight';
 
 const isDev = process.argv.includes('--dev');
 
@@ -20,12 +24,59 @@ if (isDev) app.setPath('userData', `${app.getPath('userData')} (dev)`);
 
 let win = null;
 let tray = null;
-let settings, auth, downloader, library, catalog, updates, hardware, presence;
+let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, log;
 let quitting = false;
 let dataDir;
 
 /* -------------------------------------------------------------------- */
 /* Services                                                              */
+
+/**
+ * A desktop notification, but only when the launcher is not already in front
+ * of the user - two notices for one event is worse than none.
+ */
+function notify(title, body, { route = null } = {}) {
+  try {
+    if (!Notification.isSupported()) return;
+    if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) return;
+
+    const note = new Notification({ title, body, silent: false });
+    note.on('click', () => {
+      if (!win || win.isDestroyed()) return;
+      if (!win.isVisible()) win.show();
+      win.focus();
+      if (route) win.webContents.send('nav:go', route);
+    });
+    note.show();
+  } catch (err) {
+    log?.warn('notify', 'Could not show a notification', err);
+  }
+}
+
+/**
+ * Last-resort handlers.
+ *
+ * An unhandled throw in the main process would otherwise take the launcher
+ * down with nothing written anywhere. The process still exits on a genuine
+ * crash - this only makes sure there is a record of why.
+ */
+function installCrashHandlers() {
+  process.on('uncaughtException', (err) => {
+    log?.error('main', 'Uncaught exception', err);
+    if (app.isReady() && !quitting) {
+      dialog.showErrorBox(
+        'BlackNight Launcher hit a problem',
+        `${err.message}
+
+Details were written to the log file, which you can open from Settings > Privacy.`
+      );
+    }
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    log?.error('main', 'Unhandled promise rejection', reason);
+  });
+}
 
 /**
  * Where games install by default.
@@ -69,10 +120,22 @@ function bootServices() {
   dataDir = path.join(app.getPath('userData'), 'data');
   fs.mkdirSync(dataDir, { recursive: true });
 
-  catalog = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'catalog.json'), 'utf8'));
-
   settings = createSettings(dataDir);
+
+  log = new Logger(dataDir, {
+    level: isDev ? 'debug' : 'info',
+    includeSystemInfo: settings.get('diagnosticLogs') !== false
+  });
+  log.header(app);
+  installCrashHandlers();
+
+  // Remote if configured and reachable, then the last good fetch, then the
+  // copy that shipped. Always correct offline, current whenever it can be.
+  catalogStore = new Catalog(dataDir, path.join(__dirname, 'data', 'catalog.json'), settings, log);
+  catalog = catalogStore.data;
+  log.info('catalog', `Loaded ${catalog.games.length} titles from the ${catalogStore.source} catalog`);
   if (!settings.get('installDir')) settings.set('installDir', defaultInstallDir());
+
   migrateInstallDir();
 
   auth = new Auth(dataDir);
@@ -103,6 +166,14 @@ function bootServices() {
   downloader.on('completed', (item) => {
     forward('downloads:completed')(item);
     if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true);
+    log.info('downloads', `${item.kind === 'update' ? 'Updated' : 'Installed'} ${item.title}`);
+    // minimizeToTray is the default, so the common case for a finished
+    // download is a hidden window - where an in-app toast reaches nobody.
+    notify(
+      item.kind === 'update' ? 'Update installed' : 'Install complete',
+      `${item.title} is ready to play.`,
+      { route: 'downloads' }
+    );
   });
 }
 
@@ -276,11 +347,22 @@ function registerIpc() {
 
   /* Catalog + library ------------------------------------------------ */
   handle('catalog:get', () => catalog);
+  handle('catalog:refresh', async () => {
+    const result = await catalogStore.refresh();
+    if (result.ok) {
+      // The library reads the catalog by reference, so both have to be
+      // repointed at the new document rather than only this module's copy.
+      catalog = catalogStore.data;
+      library.catalog = catalog;
+      if (win && !win.isDestroyed()) win.webContents.send('catalog:changed', catalog);
+    }
+    return result;
+  });
   handle('library:list', () => library.list());
   handle('library:stats', () => library.stats());
   handle('library:reclaimable', () => library.reclaimable());
   handle('library:acquire', (id) => library.acquire(id));
-  handle('library:install', (id) => library.install(id));
+  handle('library:install', (id, options) => library.install(id, options || {}));
   handle('library:uninstall', (id, opts) => library.uninstall(id, opts));
   handle('library:verify', (id) => library.verify(id));
   handle('library:launch', (id) => library.launch(id));
@@ -297,6 +379,34 @@ function registerIpc() {
   handle('downloads:clear-finished', () => downloader.clearFinished());
 
   /* Shell / system --------------------------------------------------- */
+  /* Diagnostics -------------------------------------------------------- */
+  handle('log:write', (level, scope, message, detail) => {
+    // The renderer reports its own failures through here, so a broken view
+    // leaves the same trail a broken service does.
+    log.log(['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info', scope || 'renderer', message, detail);
+    return true;
+  });
+  handle('log:location', () => log.location());
+  handle('log:open', () => shell.openPath(log.location().dir));
+
+  /* Library folders ---------------------------------------------------- */
+  handle('library:folders', () => library.folderStats());
+  handle('library:add-folder', async () => {
+    const picked = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, cancelled: true };
+    return library.addLibraryFolder(picked.filePaths[0]);
+  });
+  handle('library:remove-folder', (dir) => library.removeLibraryFolder(dir));
+
+  /* Game updates ------------------------------------------------------- */
+  handle('library:outdated', () => library.outdated());
+  handle('library:update-all', () => library.updateAll());
+
+  /* Saves --------------------------------------------------------------- */
+  handle('library:save-backups', (id) => library.saveBackups(id));
+  handle('library:backup-saves', (id) => library.backupSaves(id, { keep: settings.get('saveBackupsKept') || 5 }));
+  handle('library:restore-save', (id, snapshot) => library.restoreSave(id, snapshot));
+
   /* Hardware + requirements ------------------------------------------ */
   handle('hardware:probe', () => hardware.probe());
   handle('hardware:check', async (gameId) => {
@@ -390,22 +500,103 @@ function registerIpc() {
 /* -------------------------------------------------------------------- */
 /* Lifecycle                                                             */
 
+/**
+ * Deep links: blacknight://game/eclipse-protocol, blacknight://store, ...
+ *
+ * Lets the studio site and a Discord message open straight into the launcher
+ * instead of asking people to go and find the title themselves.
+ */
+function registerProtocol() {
+  if (process.defaultApp) {
+    // An unpackaged run has to register the electron binary plus this script,
+    // otherwise Windows points the protocol at electron.exe with no project.
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient(PROTOCOL);
+  }
+}
+
+/** Turns a blacknight:// URL into something the renderer understands. */
+function parseDeepLink(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== `${PROTOCOL}:`) return null;
+    // blacknight://game/<id> parses host="game", pathname="/<id>".
+    const action = parsed.hostname || '';
+    const rest = decodeURIComponent(parsed.pathname || '').replace(/^\/+/, '');
+
+    if (action === 'game' && rest) return { type: 'game', gameId: rest };
+    if (['games', 'store', 'plus', 'downloads', 'settings', 'profile'].includes(action)) {
+      return { type: 'route', route: action };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function handleDeepLink(url) {
+  const target = parseDeepLink(url);
+  if (!target) return;
+  log?.info('deeplink', `Opening ${url}`);
+
+  if (win && !win.isDestroyed()) {
+    if (!win.isVisible()) win.show();
+    win.focus();
+    win.webContents.send('deeplink', target);
+  } else {
+    pendingDeepLink = target;
+  }
+}
+
+/** Windows passes the URL as an argv entry rather than an event. */
+const deepLinkFromArgv = (argv) => (argv || []).find((arg) => arg.startsWith(`${PROTOCOL}://`));
+
+let pendingDeepLink = null;
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     if (win) {
       if (win.isMinimized()) win.restore();
       if (!win.isVisible()) win.show();
       win.focus();
     }
+    const url = deepLinkFromArgv(argv);
+    if (url) handleDeepLink(url);
+  });
+
+  // macOS delivers the URL as an event instead.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleDeepLink(url);
   });
 
   app.whenReady().then(() => {
     bootServices();
     registerIpc();
+    registerProtocol();
     createWindow();
     updates.start();
+    catalogStore.refresh().then((result) => {
+      if (!result.ok) return;
+      catalog = catalogStore.data;
+      library.catalog = catalog;
+      if (win && !win.isDestroyed()) win.webContents.send('catalog:changed', catalog);
+    });
+
+    // A link that started the launcher waits for the window to be ready.
+    const startupLink = deepLinkFromArgv(process.argv);
+    if (startupLink) pendingDeepLink = parseDeepLink(startupLink);
+    if (pendingDeepLink) {
+      win.webContents.once('did-finish-load', () => {
+        win.webContents.send('deeplink', pendingDeepLink);
+        pendingDeepLink = null;
+      });
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

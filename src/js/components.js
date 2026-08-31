@@ -409,17 +409,18 @@
       const remove = el('button', { class: 'btn btn-danger btn-sm btn-block' });
       remove.innerHTML = `${icon('trash')} Uninstall`;
       remove.addEventListener('click', async () => {
-        const yes = await BN.ui.confirm({
-          title: `Uninstall ${game.title}?`,
-          message: `This removes ${bytes(game.sizeBytes)} from ${game.installPath || 'your install folder'}. Your saves and account progress are kept.`,
-          confirmLabel: 'Uninstall',
-          danger: true
-        });
-        if (!yes) return;
-        const result = await BN.state.uninstall(game.id);
-        BN.ui.toast(result.ok ? 'Uninstalled' : 'Could not uninstall', result.ok ? `${game.title} was removed.` : result.error, {
-          kind: result.ok ? 'ok' : 'error'
-        });
+        const choice = await confirmUninstall(game);
+        if (!choice) return;
+        const result = await BN.state.uninstall(game.id, choice);
+        BN.ui.toast(
+          result.ok ? 'Uninstalled' : 'Could not uninstall',
+          result.ok
+            ? result.savesKept
+              ? `${game.title} was removed. Save data was kept.`
+              : `${game.title} was removed.`
+            : result.error,
+          { kind: result.ok ? 'ok' : 'error' }
+        );
         BN.ui.closeModal();
       });
 
@@ -433,6 +434,84 @@
     }
 
     return sheet;
+  }
+
+  /**
+   * Uninstall, asking the one question that actually matters.
+   *
+   * The main process has always supported keeping saves; nothing ever passed
+   * the flag, so the choice was made silently on the player's behalf.
+   */
+  async function confirmUninstall(game) {
+    const body = el('div');
+    body.innerHTML = `
+      <p style="color:var(--text-dim);line-height:1.7">
+        This removes <strong>${esc(game.title)}</strong> and frees ${esc(bytes(game.sizeBytes))}.
+        Your account still owns it, so you can reinstall at any time.
+      </p>`;
+
+    const keep = el('label', { class: 'ob-toggle', style: { marginTop: '10px' } });
+    keep.innerHTML = `
+      <span class="grow">
+        <span class="ob-toggle-label">${esc(BN.t('saves.keepOnUninstall'))}</span>
+        <span class="ob-toggle-desc">${esc(BN.t('saves.keepHint'))}</span>
+      </span>
+      <input type="checkbox" checked>`;
+    body.append(keep);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      BN.ui.modal({
+        title: `Uninstall ${game.title}?`,
+        content: body,
+        onClose: () => finish(null),
+        footer: [
+          { label: BN.t('action.cancel'), class: 'btn-ghost', onClick: ({ close }) => { finish(null); close(); } },
+          {
+            label: BN.t('action.uninstall'),
+            class: 'btn-danger',
+            onClick: ({ close }) => {
+              finish({ keepSaves: keep.querySelector('input').checked });
+              close();
+            }
+          }
+        ]
+      });
+    });
+  }
+
+  /**
+   * A game that exited badly gets a route to the fix rather than silence.
+   */
+  function reportCrash(game, result) {
+    if (!result?.crashed) return;
+    const exit = result.exit || {};
+    BN.log?.warn('launch', `${game.title} exited abnormally`, exit);
+
+    BN.ui.toast(
+      BN.t('error.crashed', { title: game.title }),
+      BN.t('error.crashedBody', { code: exit.code ?? exit.signal ?? exit.error ?? 'unknown', seconds: result.seconds ?? 0 }),
+      {
+        kind: 'error',
+        ms: 12000,
+        action: {
+          label: BN.t('action.verify'),
+          onClick: async () => {
+            const r = await BN.state.verify(game.id);
+            BN.ui.toast(r.ok ? 'Verification complete' : 'Verification failed', r.message || r.error, {
+              kind: r.ok ? 'ok' : 'error',
+              ms: 8000
+            });
+          }
+        }
+      }
+    );
   }
 
   /**
@@ -744,6 +823,6 @@
 
   BN.components = {
     primaryAction, runAction, actionButton, statusLine, statusBadge, priceTag,
-    gameCard, newsCard, openDetail, STATUS_LABEL
+    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, STATUS_LABEL
   };
 })();

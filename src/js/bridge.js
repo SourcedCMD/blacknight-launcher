@@ -44,7 +44,8 @@
     concurrentDownloads: 1, bandwidthLimitMbps: 0, pauseOnMetered: true, autoUpdateGames: true,
     launchOnStartup: false, startMinimized: false, minimizeToTray: true, closeAction: 'tray',
     exitOnGameLaunch: false, showPlaytime: true,
-    rememberMe: true, richPresence: true, shareStats: false, onboarded: false
+    rememberMe: true, richPresence: true, diagnosticLogs: true, backupSaves: true, saveBackupsKept: 5,
+    libraryFolders: [], locale: 'auto', onboarded: false
   };
   db.settings = { ...SETTINGS_DEFAULTS, ...db.settings };
 
@@ -260,10 +261,24 @@
     },
 
     catalog: {
+      // The preview always serves the bundled copy.
+      async refresh() { return { ok: false, reason: 'not-configured', source: 'bundled' }; },
+      onChanged: () => () => {},
       async get() { await catalogReady; return catalog; }
     },
 
     library: {
+      // The browser preview has one notional folder and no real disk.
+      async folders() {
+        return [{ dir: 'Browser preview', primary: true, installed: 0, usedBytes: 0, freeBytes: null }];
+      },
+      async addFolder() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async removeFolder() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async outdated() { return []; },
+      async updateAll() { return { ok: true, started: [], pending: [] }; },
+      async saveBackups() { return []; },
+      async backupSaves() { return { ok: false, reason: 'no-saves' }; },
+      async restoreSave() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async reclaimable() {
         return Object.values(db.entries)
           .filter((e) => e.status === 'installed')
@@ -392,6 +407,17 @@
       async check() { return { level: 'unknown', minimum: null, recommended: null }; }
     },
 
+    // Diagnostics go to the browser console rather than a file.
+    log: {
+      async write(level, scope, message, detail) {
+        const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+        fn(`[${scope}] ${message}`, detail ?? '');
+        return true;
+      },
+      async location() { return { dir: 'browser console', file: 'browser console' }; },
+      async open() { return null; }
+    },
+
     presence: {
       async status() { return { state: 'unconfigured' }; },
       async setEnabled() { return { state: 'unconfigured' }; }
@@ -424,7 +450,8 @@
       async setProgress() {},
       async relaunch() { location.reload(); },
       async quit() {},
-      onNavigate: (fn) => { listeners.nav.push(fn); return () => {}; }
+      onNavigate: (fn) => { listeners.nav.push(fn); return () => {}; },
+      onDeepLink: () => () => {}
     }
   };
 

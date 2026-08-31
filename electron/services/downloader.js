@@ -4,6 +4,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const { EventEmitter } = require('events');
+const crypto = require('crypto');
 const { Store } = require('./store');
 
 const TICK_MS = 250;
@@ -65,7 +66,7 @@ class Downloader extends EventEmitter {
     };
   }
 
-  enqueue({ gameId, title, totalBytes, url = null, installDir, kind = 'install', version = '1.0.0' }) {
+  enqueue({ gameId, title, totalBytes, url = null, installDir, kind = 'install', version = '1.0.0', sha256 = null }) {
     const items = this.store.get('items');
     const existing = items.find((i) => i.gameId === gameId && i.status !== 'completed' && i.status !== 'cancelled');
     if (existing) return this._decorate(existing);
@@ -78,6 +79,9 @@ class Downloader extends EventEmitter {
       kind,
       version,
       url,
+      // Supplied by the catalog. Without one the transfer can only be checked
+      // for length, which is recorded honestly rather than called "verified".
+      sha256,
       simulated: !url,
       dest,
       file: path.join(dest, `${gameId}.pak`),
@@ -387,6 +391,19 @@ class Downloader extends EventEmitter {
 
   _complete(item) {
     this._stopRuntime(item.id, { keepStatus: true });
+
+    // A resumed transfer over a flaky line is exactly where silent corruption
+    // happens, so the digest is checked before anyone is told it is ready.
+    if (item.sha256) {
+      item.status = 'verifying';
+      this.emit('changed', this.list());
+      const actual = Downloader.hashFile(item.file);
+      if (actual && actual !== item.sha256.toLowerCase()) {
+        return this._fail(item, 'The downloaded files did not match their checksum.');
+      }
+      item.verifiedSha256 = actual;
+    }
+
     item.status = 'completed';
     item.completedAt = Date.now();
     item.receivedBytes = item.totalBytes;
@@ -394,6 +411,26 @@ class Downloader extends EventEmitter {
     this.emit('completed', this._decorate(item));
     this.emit('changed', this.list());
     this._pump();
+  }
+
+  /** SHA-256 of a file on disk, or null if it cannot be read. */
+  static hashFile(file) {
+    try {
+      const hash = crypto.createHash('sha256');
+      const fd = fs.openSync(file, 'r');
+      const buffer = Buffer.alloc(1 << 20);
+      try {
+        let read;
+        while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+          hash.update(buffer.subarray(0, read));
+        }
+      } finally {
+        fs.closeSync(fd);
+      }
+      return hash.digest('hex');
+    } catch {
+      return null;
+    }
   }
 
   _fail(item, message) {

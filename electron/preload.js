@@ -43,7 +43,9 @@ contextBridge.exposeInMainWorld('blacknight', {
   },
 
   catalog: {
-    get: () => call('catalog:get')
+    get: () => call('catalog:get'),
+    refresh: () => call('catalog:refresh'),
+    onChanged: (handler) => on('catalog:changed', handler)
   },
 
   library: {
@@ -51,7 +53,15 @@ contextBridge.exposeInMainWorld('blacknight', {
     stats: () => call('library:stats'),
     reclaimable: () => call('library:reclaimable'),
     acquire: (id) => call('library:acquire', id),
-    install: (id) => call('library:install', id),
+    install: (id, options) => call('library:install', id, options),
+    folders: () => call('library:folders'),
+    addFolder: () => call('library:add-folder'),
+    removeFolder: (dir) => call('library:remove-folder', dir),
+    outdated: () => call('library:outdated'),
+    updateAll: () => call('library:update-all'),
+    saveBackups: (id) => call('library:save-backups', id),
+    backupSaves: (id) => call('library:backup-saves', id),
+    restoreSave: (id, snapshot) => call('library:restore-save', id, snapshot),
     uninstall: (id, opts) => call('library:uninstall', id, opts),
     verify: (id) => call('library:verify', id),
     launch: (id) => call('library:launch', id),
@@ -82,6 +92,12 @@ contextBridge.exposeInMainWorld('blacknight', {
     setEnabled: (enabled) => call('presence:set-enabled', enabled)
   },
 
+  log: {
+    write: (level, scope, message, detail) => call('log:write', level, scope, message, detail),
+    location: () => call('log:location'),
+    open: () => call('log:open')
+  },
+
   updates: {
     get: () => call('updates:get'),
     check: () => call('updates:check'),
@@ -102,6 +118,7 @@ contextBridge.exposeInMainWorld('blacknight', {
     setProgress: (value) => call('app:set-progress', value),
     relaunch: () => call('app:relaunch'),
     quit: () => call('app:quit'),
-    onNavigate: (handler) => on('nav:go', handler)
+    onNavigate: (handler) => on('nav:go', handler),
+    onDeepLink: (handler) => on('deeplink', handler)
   }
 });

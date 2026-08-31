@@ -61,6 +61,51 @@
   }
 
   /* --------------------------------------------------------------------- */
+  /* Focus containment                                                      */
+
+  const FOCUSABLE =
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), ' +
+    'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  /**
+   * Keeps Tab inside `container` and hands focus back where it came from on
+   * release. Returns the undo function.
+   */
+  function trapFocus(container) {
+    const previous = document.activeElement;
+
+    const onKeydown = (e) => {
+      if (e.key !== 'Tab') return;
+      const items = [...container.querySelectorAll(FOCUSABLE)].filter(
+        (node) => node.offsetWidth || node.offsetHeight || node.getClientRects().length
+      );
+      if (!items.length) {
+        e.preventDefault();
+        return;
+      }
+
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      // Wrap at both ends, and pull focus back in if it has escaped already.
+      if (e.shiftKey && (active === first || !container.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !container.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeydown, true);
+    return () => {
+      document.removeEventListener('keydown', onKeydown, true);
+      if (previous && document.contains(previous)) previous.focus?.();
+    };
+  }
+
+  /* --------------------------------------------------------------------- */
   /* Modal                                                                  */
 
   let openModal = null;
@@ -106,18 +151,22 @@
     });
     document.body.appendChild(overlay);
 
-    openModal = { overlay, onClose };
+    // Tab must not walk out of a dialog into the page behind it: keyboard and
+    // screen-reader users lose their place entirely, and the page underneath
+    // is inert anyway.
+    const release = trapFocus(box);
+    openModal = { overlay, onClose, release };
     BN.sound?.play('open');
 
-    // Move focus in so Escape and Tab behave.
     (box.querySelector('input, button, select, textarea') || box).focus?.();
     return { overlay, box, body, close: closeModal };
   }
 
   function closeModal(immediate = false) {
     if (!openModal) return;
-    const { overlay, onClose } = openModal;
+    const { overlay, onClose, release } = openModal;
     openModal = null;
+    release?.();
     onClose?.();
     if (immediate) {
       overlay.remove();
@@ -320,5 +369,5 @@
     else if (openModal) closeModal();
   });
 
-  BN.ui = { toast, modal, closeModal, confirm, commandPalette, closePalette, dropdown, closeDropdown };
+  BN.ui = { toast, modal, closeModal, confirm, commandPalette, closePalette, dropdown, closeDropdown, trapFocus };
 })();

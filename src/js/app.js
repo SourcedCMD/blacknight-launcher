@@ -138,7 +138,20 @@
     renderConnectivity(BN.state.data.online);
 
     BN.api.app.onNavigate((target) => go(target));
+
+    // blacknight://game/<id> and blacknight://store, from the site or a chat.
+    BN.api.app.onDeepLink?.((target) => {
+      if (!target) return;
+      if (target.type === 'route') go(target.route);
+      else if (target.type === 'game') {
+        go('store');
+        setTimeout(() => BN.components.openDetail(target.gameId), 160);
+      }
+    });
+
     BN.gamepad?.init();
+    BN.i18n?.setLocale(BN.state.data.settings.locale);
+    checkGameUpdates();
 
     // Pick up where they left off rather than always landing on Games.
     go(BN.state.data.settings.lastRoute || 'games');
@@ -402,6 +415,52 @@
     paintQueuePill();
   }
 
+  /**
+   * Games whose catalog version has moved past what is installed.
+   *
+   * autoUpdateGames decides whether they start on their own; either way the
+   * player is told, because a silent 40 GB download is its own kind of rude.
+   */
+  async function checkGameUpdates() {
+    let pending = [];
+    try {
+      pending = await BN.api.library.outdated();
+    } catch (err) {
+      BN.log?.warn('updates', 'Could not check for game updates', err);
+      return;
+    }
+    if (!pending.length) return;
+
+    const auto = BN.state.data.settings.autoUpdateGames !== false;
+    const label = BN.i18n.plural('updates.available', pending.length);
+
+    if (auto) {
+      const result = await BN.api.library.updateAll();
+      await BN.state.refreshLibrary();
+      await BN.state.refreshDownloads();
+      BN.ui.toast(label, BN.i18n.plural('updates.started', result.started.length), {
+        kind: 'ok',
+        ms: 7000,
+        action: { label: 'View queue', onClick: () => go('downloads') }
+      });
+    } else {
+      BN.ui.toast(label, pending.map((p) => p.title).join(', '), {
+        kind: 'info',
+        ms: 9000,
+        action: {
+          label: BN.t('updates.installAll'),
+          onClick: async () => {
+            const result = await BN.api.library.updateAll();
+            await BN.state.refreshLibrary();
+            await BN.state.refreshDownloads();
+            BN.ui.toast(BN.i18n.plural('updates.started', result.started.length), '', { kind: 'ok' });
+            go('downloads');
+          }
+        }
+      });
+    }
+  }
+
   function paintQueuePill() {
     const pill = $('#tb-download');
     const queue = BN.state.queueProgress();
@@ -601,7 +660,7 @@
 
   /* --------------------------------------------------------------------- */
 
-  BN.app = { boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts };
+  BN.app = { boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts, checkGameUpdates };
 
   document.addEventListener('DOMContentLoaded', () => {
     boot().catch((err) => {

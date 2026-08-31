@@ -47,6 +47,8 @@ electron/            Main process
     hardware.js      Reads this machine: CPU, GPU, memory, free space
     requirements.js  Compares a title's requirements against it
     presence.js      Discord rich presence over the local IPC socket
+    logger.js        Rolling diagnostic log in the data directory
+    catalog.js       Remote slate and news, with the bundled copy as fallback
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -61,6 +63,8 @@ src/                 Renderer (classic scripts, dependency-ordered in index.html
     fx.js / sound.js Canvas background, pointer glow, UI sounds
     gamepad.js       Controller navigation over whatever is on screen
     onboarding.js    First-run setup: install folder, accent, sound
+    diagnostics.js   Catches renderer errors and reports them to the log
+    i18n.js          Translation layer; English bundled
     views/           games, store, plus, downloads, settings, profile
     app.js           Boot sequence, routing, shortcuts, window chrome
 
@@ -72,6 +76,7 @@ test/
   services.test.js       Store, settings, accounts and install rules
   requirements.test.js   Hardware tiers and the "will it run?" verdict
   scheduling.test.js     Download window, bandwidth yielding, ownership
+  diagnostics.test.js    Logging, catalog fallback, checksums, saves, updates
 
 build/
   icons/             PNG masters, 16–256px
@@ -168,6 +173,45 @@ already tracks. Set `CLIENT_ID` to a Discord application ID to enable it; while
 it is empty the settings row says so rather than offering a switch that does
 nothing.
 
+**Nothing fails silently.** The main process logs uncaught exceptions and
+rejections; the renderer registers its handlers before any view code runs and
+queues reports until the IPC bridge exists. Everything lands in a rolling log
+under the data directory, reachable from Settings, and the user is told a
+problem occurred rather than being left with a half-drawn view.
+
+**The catalog and news come from the network when they can.** Both used to be
+baked into the asar, so announcing a title meant shipping an installer. The
+launcher now prefers a remote document, falls back to the last good fetch, then
+to the bundled copy - correct offline and on first run, current otherwise. A
+document that fails to parse, or carries an empty slate, is rejected rather
+than replacing a working catalog.
+
+**Downloads are checksummed.** Catalog entries may carry a `sha256`, verified
+before anything is reported as installed, and recorded in the install manifest
+so a later verify compares like for like. Without one, `verify()` says it only
+checked file sizes instead of claiming a guarantee it cannot make.
+
+**Games update themselves.** An update is a version mismatch between the
+catalog and what is on disk - no separate patch feed to keep in step.
+`autoUpdateGames` decides whether they start on their own; either way the
+player is told, because a silent 40 GB download is its own kind of rude.
+
+**Saves are snapshotted.** Cloud saves need a server; keeping the last few
+local versions does not. A snapshot is taken when a session ends and before a
+restore, and saves are copied out of the install folder before an uninstall
+removes it - so "keep my saves" means something.
+
+**A crash says so.** The exit code of a launched game is kept, so a title that
+dies on startup no longer looks exactly like one somebody quit; the launcher
+offers to verify the files instead.
+
+**Deep links.** `blacknight://game/<id>` and `blacknight://store` open straight
+into the launcher, so the site or a Discord message can point at a title.
+
+**Multiple library folders.** A small SSD and a large HDD is the ordinary PC.
+The primary folder always leads and cannot be removed, and a folder holding an
+install cannot be dropped.
+
 **First run asks three questions.** Install folder, accent and sound. The
 accent step is the only chance most people get to discover that six exist.
 Settings can replay it.
@@ -227,5 +271,7 @@ services. Still to connect before a public release:
   those pages exist.
 - **Rich presence needs a Discord application ID** (`CLIENT_ID` in
   `presence.js`) before it can connect.
+- **`catalogUrl` is empty**, so the slate and news come from the bundled copy
+  until it points at a hosted `catalog.json`.
 - **Live player counts are not populated.** The field exists but no service
   fills it, so nothing is displayed rather than a number being invented.

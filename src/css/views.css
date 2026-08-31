@@ -595,6 +595,9 @@
   overflow: hidden;
 }
 .path-box span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Without an explicit size an inline SVG takes its default 300x150 box and
+   swallows the panel. */
+.path-box > svg { flex: none; width: 16px; height: 16px; color: var(--text-mute); }
 
 .accent-swatches { display: flex; gap: 10px; flex-wrap: wrap; }
 .swatch {
