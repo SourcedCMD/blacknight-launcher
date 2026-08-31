@@ -18,7 +18,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node --test",
+    "test": "node --test --test-timeout=60000",
     "web": "node scripts/dev-server.js",
     "icon": "node scripts/make-icon.js",
     "check:catalog": "node scripts/check-catalog.js",

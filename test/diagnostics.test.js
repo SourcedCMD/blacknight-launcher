@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const http = require('node:http');
 const { EventEmitter } = require('node:events');
 
 const { Logger, safeJson } = require('../electron/services/logger');
@@ -122,12 +123,85 @@ test('refresh reports not-configured when no url is set', async () => {
 test('an unreachable url keeps the catalog already loaded', async () => {
   const { dir, file } = bundled(GOOD);
   const settings = createSettings(tmpDir());
-  // Reserved by RFC 5737 and guaranteed not to route anywhere.
-  settings.set('catalogUrl', 'http://192.0.2.1:9/catalog.json');
+  // A closed port on loopback refuses immediately. An off-network address
+  // would depend on how the host treats unroutable traffic, which differs
+  // between machines and made this test flaky in CI.
+  settings.set('catalogUrl', 'http://127.0.0.1:1/catalog.json');
   const catalog = new Catalog(dir, file, settings, null);
   const result = await catalog.refresh();
   assert.equal(result.ok, false);
+  assert.equal(result.reason, 'unreachable');
   assert.equal(catalog.games.length, 1, 'the working catalog survived');
+});
+
+/** A throwaway server, so the success path is covered without the internet. */
+async function serve(handler) {
+  const server = http.createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  test.after(() => server.close());
+  return `http://127.0.0.1:${server.address().port}/catalog.json`;
+}
+
+test('a good remote catalog is adopted and cached', async () => {
+  const { dir, file } = bundled(GOOD);
+  const remote = { games: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], news: [] };
+  const settings = createSettings(tmpDir());
+  settings.set('catalogUrl', await serve((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(remote));
+  }));
+
+  const catalog = new Catalog(dir, file, settings, null);
+  assert.equal(catalog.source, 'bundled');
+
+  const result = await catalog.refresh();
+  assert.equal(result.ok, true);
+  assert.equal(catalog.games.length, 3);
+  assert.equal(catalog.source, 'remote');
+  // Cached, so the next start is current even offline.
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'catalog.cache.json'), 'utf8')).games.length, 3);
+});
+
+test('a remote catalog that is not JSON is ignored', async () => {
+  const { dir, file } = bundled(GOOD);
+  const settings = createSettings(tmpDir());
+  settings.set('catalogUrl', await serve((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('<html>an error page</html>');
+  }));
+
+  const catalog = new Catalog(dir, file, settings, null);
+  const result = await catalog.refresh();
+  assert.equal(result.ok, false);
+  assert.equal(catalog.games.length, 1, 'the bundled catalog is untouched');
+});
+
+test('a remote catalog with an empty slate is rejected', async () => {
+  const { dir, file } = bundled(GOOD);
+  const settings = createSettings(tmpDir());
+  settings.set('catalogUrl', await serve((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ games: [], news: [] }));
+  }));
+
+  const catalog = new Catalog(dir, file, settings, null);
+  const result = await catalog.refresh();
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'invalid');
+  assert.equal(catalog.games.length, 1, 'a broken deploy cannot empty the store front');
+});
+
+test('a non-200 response changes nothing', async () => {
+  const { dir, file } = bundled(GOOD);
+  const settings = createSettings(tmpDir());
+  settings.set('catalogUrl', await serve((_req, res) => {
+    res.writeHead(503);
+    res.end();
+  }));
+
+  const catalog = new Catalog(dir, file, settings, null);
+  assert.equal((await catalog.refresh()).ok, false);
+  assert.equal(catalog.games.length, 1);
 });
 
 /* --- Checksums ----------------------------------------------------------- */
