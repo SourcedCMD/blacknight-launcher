@@ -23,7 +23,8 @@
     "icon": "node scripts/make-icon.js",
     "check:catalog": "node scripts/check-catalog.js",
     "dist": "electron-builder",
-    "dist:win": "electron-builder --win nsis"
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
@@ -86,8 +87,10 @@
       "icon": "build/icons",
       "artifactName": "BlackNightLauncher-${version}.${ext}",
       "desktop": {
-        "Name": "BlackNight Launcher",
-        "Categories": "Game;"
+        "entry": {
+          "Name": "BlackNight Launcher",
+          "Categories": "Game;"
+        }
       }
     }
   }

@@ -37,7 +37,7 @@ jobs:
         run: npm run icon
 
       - name: Build and publish the installer
-        run: npx electron-builder --win nsis --publish always
+        run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
