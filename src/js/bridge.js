@@ -12,7 +12,9 @@
 
   if (window.blacknight?.isElectron) {
     BN.api = window.blacknight;
-    BN.api.mode = 'electron';
+    // contextBridge hands over a frozen object, so the flag lives on BN
+    // rather than on the bridge itself - assigning to it throws.
+    BN.mode = 'electron';
     return;
   }
 
@@ -173,7 +175,7 @@
 
   BN.api = {
     isElectron: false,
-    mode: 'mock',
+    mode: 'mock', // mirrored on BN.mode below, alongside the Electron branch
 
     window: {
       minimize: async () => {},
@@ -454,6 +456,8 @@
       onDeepLink: () => () => {}
     }
   };
+
+  BN.mode = 'mock';
 
   // Anything caught mid-flight by a page reload comes back paused.
   for (const d of db.downloads) if (d.status === 'downloading') d.status = 'paused';

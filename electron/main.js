@@ -590,10 +590,14 @@ if (!app.requestSingleInstanceLock()) {
 
     // A link that started the launcher waits for the window to be ready.
     const startupLink = deepLinkFromArgv(process.argv);
-    if (startupLink) pendingDeepLink = parseDeepLink(startupLink);
+    if (startupLink) {
+      pendingDeepLink = parseDeepLink(startupLink);
+      log.info('deeplink', `Started from ${startupLink}`, pendingDeepLink || 'unrecognised link');
+    }
     if (pendingDeepLink) {
       win.webContents.once('did-finish-load', () => {
         win.webContents.send('deeplink', pendingDeepLink);
+        log.info('deeplink', 'Delivered to the renderer', pendingDeepLink);
         pendingDeepLink = null;
       });
     }
