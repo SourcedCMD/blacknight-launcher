@@ -9,6 +9,10 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  /* A canvas is a replaced element: inset:0 alone leaves it at its intrinsic
+     300x150, so the whole starfield was being drawn into the top-left corner. */
+  width: 100%;
+  height: 100%;
 }
 
 #ambient {

@@ -244,7 +244,22 @@
     storeLive: false
   };
 
+  /**
+   * Makes an inline SVG cover its container.
+   *
+   * `object-fit` only applies to replaced elements, so an inline <svg> ignores
+   * it and letterboxes inside its box instead. The equivalent is the SVG's own
+   * preserveAspectRatio, which can only be set as an attribute.
+   */
+  function coverSvg(host) {
+    for (const svg of host?.querySelectorAll?.('svg') || []) {
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+    }
+    return host;
+  }
+
   BN.util = {
+    coverSvg,
     $, $$, el, esc, frag, link, hasLink,
     bytes, speed, duration, playtime, money, date, relative, countdown,
     clamp, lerp, sleep, debounce, throttle, rng, hashString, initials, countTo,

@@ -123,6 +123,63 @@
     notify: () => [880, 1174.66].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.22, gain: 0.07, delay: i * 0.09 }))
   };
 
+  /**
+   * A launch sting derived from the title itself.
+   *
+   * Every game already carries `art.hue` and `art.seed`, and the whole sound
+   * palette is synthesised rather than sampled - so giving each title its own
+   * voice costs a handful of numbers rather than a folder of audio files.
+   * Hollow Choir ends up close and detuned; Midnight Circuit bright and quick.
+   *
+   * Hue picks the key, so a title's colour and its sound agree.
+   */
+  function signature(game) {
+    if (!enabled || !ensure()) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    // Falls back to the shared cue when a title has no art to derive from, or
+    // when the player would rather every launch sounded the same.
+    if (!game?.art || BN.state?.data?.settings?.titleSignatures === false) return play('launch');
+
+    try {
+      const rand = BN.util.rng(BN.util.hashString(game.id));
+      const hue = game.art.hue ?? 210;
+
+      // Map the colour wheel onto two octaves of a minor scale.
+      const SCALE = [0, 3, 5, 7, 10, 12];
+      const root = 110 * Math.pow(2, (hue / 360) * 1.5);
+      const note = (step) => root * Math.pow(2, SCALE[step % SCALE.length] / 12) * (step >= SCALE.length ? 2 : 1);
+
+      // Darker motifs sit lower and hold longer; brighter ones snap.
+      const dark = ['ruins', 'city', 'sea'].includes(game.art.motif);
+      const dur = dark ? 1.4 : 0.85;
+      const wave = dark ? 'sawtooth' : 'triangle';
+
+      tone({
+        freq: root / 2,
+        type: 'sawtooth',
+        dur,
+        gain: 0.15,
+        glide: dark ? 180 : 460,
+        filter: { type: 'lowpass', freq: dark ? 900 : 2200, q: 6 }
+      });
+      noise({ dur: dur * 1.1, gain: 0.06, freq: 300, type: 'bandpass', q: 0.8, sweepTo: dark ? 3200 : 7600 });
+
+      // A short arpeggio picked from the title's own seed.
+      const steps = dark ? [0, 2, 4] : [0, 3, 5, 7];
+      steps.forEach((step, i) => {
+        tone({
+          freq: note(step + Math.floor(rand() * 2)),
+          type: wave,
+          dur: 0.5,
+          gain: 0.075,
+          delay: 0.28 + i * (dark ? 0.13 : 0.07)
+        });
+      });
+    } catch {
+      play('launch');
+    }
+  }
+
   function play(cue) {
     if (!enabled) return;
     if (!ensure()) return;
@@ -134,6 +191,7 @@
 
   BN.sound = {
     play,
+    signature,
     configure({ enabled: on, volume: vol } = {}) {
       if (on !== undefined) enabled = !!on;
       if (vol !== undefined) {

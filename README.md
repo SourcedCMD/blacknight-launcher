@@ -49,6 +49,8 @@ electron/            Main process
     presence.js      Discord rich presence over the local IPC socket
     logger.js        Rolling diagnostic log in the data directory
     catalog.js       Remote slate and news, with the bundled copy as fallback
+    chunks.js        Block-level delta patching: manifests, diffs, plans
+    peers.js         LAN peer install over multicast discovery
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -65,6 +67,7 @@ src/                 Renderer (classic scripts, dependency-ordered in index.html
     onboarding.js    First-run setup: install folder, accent, sound
     diagnostics.js   Catches renderer errors and reports them to the log
     i18n.js          Translation layer; English bundled
+    views/journal.js Play journal, session insights, year in review
     views/           games, store, plus, downloads, settings, profile
     app.js           Boot sequence, routing, shortcuts, window chrome
 
@@ -77,6 +80,7 @@ test/
   requirements.test.js   Hardware tiers and the "will it run?" verdict
   scheduling.test.js     Download window, bandwidth yielding, ownership
   diagnostics.test.js    Logging, catalog fallback, checksums, saves, updates
+  chunks.test.js         Delta patching, peer tokens, journal, year in review
 
 build/
   icons/             PNG masters, 16–256px
@@ -211,6 +215,52 @@ into the launcher, so the site or a Discord message can point at a title.
 **Multiple library folders.** A small SSD and a large HDD is the ordinary PC.
 The primary folder always leads and cannot be removed, and a folder holding an
 install cannot be dropped.
+
+## The parts that make it feel like BlackNight
+
+**Your library is the night sky.** The starfield behind every view used to be
+random. It is now drawn from the library: one star per title, placed from its
+art seed so it never moves, sized by playtime and brightened by how recently it
+was played. Hovering names it, clicking opens it. The background stops being
+decoration and becomes a picture of how someone actually plays.
+
+**Every title has a voice.** The sound palette is synthesised rather than
+sampled, so a per-title launch sting costs a handful of numbers instead of a
+folder of audio. Hue picks the key and the motif picks the character, so a
+game's colour and its sound agree.
+
+**Launching is an event.** The key art blooms, the title's own sting plays, and
+the shell dims out of the way for a beat before the process starts.
+
+**The launcher follows the sun.** The ambient ground shifts from daylight
+through dusk to deep night. Only the background tokens move, so it composes
+with whichever accent the player chose.
+
+**It knows your habits.** A journal line is written per session, and before a
+launch the launcher can say how long sessions here usually run and where that
+lands on the clock - computed from local history, never uploaded. At the end of
+a year that becomes a generated poster, seeded from the year's own numbers.
+
+**There is exactly one secret**, which is the correct number for a studio
+launcher.
+
+## Getting a 90 GB game to people
+
+**Updates patch block by block.** A build is chunked and hashed; an update only
+transfers the blocks that actually changed, and a block that merely moved is
+copied locally rather than downloaded. Fixed-size chunking cannot follow an
+insertion that shifts a whole file - that needs a rolling hash, which is not
+worth its cost for game data that is rebuilt rather than edited in place.
+
+**Installs can be shared across a LAN.** Launchers announce completed installs
+over multicast and serve them to each other, so a household downloads a build
+once. Announcements carry ids and versions only, a token derived from the build
+gates every request, and everything a peer sends is checked against the
+catalog's own digest - a hostile peer can waste time and nothing else. Off
+unless enabled.
+
+**Uninstalling need not throw the download away.** Optionally the verified
+payload is kept, so reinstalling is a checksum pass rather than another 90 GB.
 
 **First run asks three questions.** Install folder, accent and sound. The
 accent step is the only chance most people get to discover that six exist.

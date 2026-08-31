@@ -129,6 +129,8 @@
     BN.sound.bindGlobal(document);
 
     bus.on('library', () => {
+      // The sky is drawn from the library, so it follows every change to it.
+      BN.fx.setLibrary(BN.state.data.library);
       renderSidebar();
       if (route === 'games') BN.views.games.render();
       if (route === 'profile') BN.views.profile.render();
@@ -150,7 +152,11 @@
     });
 
     BN.gamepad?.init();
+    BN.fx.setLibrary(BN.state.data.library);
     BN.i18n?.setLocale(BN.state.data.settings.locale);
+    paintTimeOfDay();
+    // Re-checked every ten minutes so the shift across dusk is not abrupt.
+    setInterval(paintTimeOfDay, 600000);
     checkGameUpdates();
 
     // Pick up where they left off rather than always landing on Games.
@@ -467,8 +473,10 @@
     if (!queue) {
       pill.classList.remove('active');
       BN.api.app.setProgress(-1);
+      paintTrayIcon(null);
       return;
     }
+    paintTrayIcon(queue.progress);
     pill.classList.add('active');
     pill.innerHTML = `
       ${icon('download', 'style="width:13px;height:13px"')}
@@ -573,6 +581,8 @@
       { group: 'Actions', label: 'Collapse the sidebar', icon: 'chevronLeft', hint: 'Ctrl B', run: toggleSidebar },
       { group: 'Actions', label: 'Redeem a code', icon: 'sparkles', run: redeemCode },
       { group: 'Actions', label: 'Keyboard shortcuts', icon: 'keyboard', hint: '?', run: showShortcuts },
+      { group: 'Actions', label: 'Play journal', icon: 'clock', keywords: 'history sessions log', run: () => BN.views.journal.open() },
+      { group: 'Actions', label: 'Your year in the dark', icon: 'sparkles', keywords: 'review wrapped stats year', run: () => BN.views.journal.yearInReview() },
       { group: 'Account', label: 'Sign out', icon: 'logout', run: signOut }
     );
 
@@ -590,6 +600,85 @@
   }
 
   const openPalette = () => BN.ui.commandPalette(commands());
+
+  /* --- The launcher follows the sun -------------------------------------- */
+
+  const PHASES = [
+    { id: 'deep', from: 0, to: 5, label: 'Deep night' },
+    { id: 'dawn', from: 5, to: 8, label: 'Before dawn' },
+    { id: 'day', from: 8, to: 17, label: 'Daylight' },
+    { id: 'dusk', from: 17, to: 21, label: 'Dusk' },
+    { id: 'night', from: 21, to: 24, label: 'Night' }
+  ];
+
+  const phaseFor = (hour) => PHASES.find((p) => hour >= p.from && hour < p.to) || PHASES[0];
+
+  /**
+   * Tints the shell by local time.
+   *
+   * The brand is nocturnal; this makes that structural rather than decorative.
+   * It only moves a couple of CSS variables, so it composes with whichever
+   * accent the user picked instead of fighting it.
+   */
+  function paintTimeOfDay() {
+    const root = document.documentElement;
+    if (BN.state.data.settings.timeOfDayTint === false) {
+      root.removeAttribute('data-phase');
+      return;
+    }
+    const phase = phaseFor(new Date().getHours());
+    root.setAttribute('data-phase', phase.id);
+    return phase;
+  }
+
+  /* --- Tray icon ---------------------------------------------------------- */
+
+  let lastTrayPercent = -1;
+
+  /**
+   * Draws the download percentage as a ring around the mark.
+   *
+   * The renderer already rasterises the logo for the taskbar, so the same
+   * canvas can carry progress - glanceable from the tray without opening
+   * anything.
+   */
+  function paintTrayIcon(progress) {
+    const percent = progress === null ? -1 : Math.round(progress * 100);
+    if (percent === lastTrayPercent) return;
+    lastTrayPercent = percent;
+
+    try {
+      const svg = BN.art.logo(64, { glow: false });
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+
+        if (percent >= 0) {
+          // Inset the mark so the ring has somewhere to live.
+          ctx.drawImage(img, 7, 7, 50, 50);
+          ctx.lineWidth = 5;
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          ctx.beginPath();
+          ctx.arc(32, 32, 28, 0, Math.PI * 2);
+          ctx.stroke();
+
+          const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8fb8ff';
+          ctx.strokeStyle = accent;
+          ctx.beginPath();
+          ctx.arc(32, 32, 28, -Math.PI / 2, -Math.PI / 2 + (percent / 100) * Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.drawImage(img, 0, 0, 64, 64);
+        }
+
+        BN.api.app.setTrayIcon(canvas.toDataURL('image/png'));
+      };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    } catch { /* the tray is cosmetic */ }
+  }
 
   /* --- Shortcut cheatsheet ---------------------------------------------- */
 
@@ -634,6 +723,47 @@
     });
   }
 
+  /**
+   * The Umbra test chamber.
+   *
+   * Every studio launcher should have exactly one secret in it. The art engine
+   * already generates everything from a seed, so the room costs nothing but
+   * the sequence to find it.
+   */
+  const KONAMI = [
+    'ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
+    'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'
+  ];
+  let konamiAt = 0;
+
+  function testChamber() {
+    const seed = Math.floor(Math.random() * 1e9);
+    const motifs = BN.art.MOTIFS;
+    const motif = motifs[seed % motifs.length];
+
+    const body = el('div', { class: 'chamber' });
+    body.innerHTML = `
+      <div class="chamber-art">${BN.art.keyArt({ seed, hue: seed % 360, motif, w: 1200, h: 700, detail: 0.9 })}</div>
+      <div class="chamber-body">
+        <div class="chamber-eyebrow">Umbra engine</div>
+        <h2 class="chrome-text">Test chamber ${String(seed).slice(-4)}</h2>
+        <p>Nothing here is authored. Motif <b>${esc(motif)}</b>, seed <b>${esc(String(seed))}</b> &mdash;
+        the same generator that draws every poster in the store, turned up.</p>
+      </div>`;
+
+    BN.util.coverSvg(body.querySelector('.chamber-art'));
+    BN.sound?.play('boot');
+    BN.ui.modal({
+      title: 'You found it',
+      wide: true,
+      content: body,
+      footer: [
+        { label: 'Again', class: 'btn-ghost', onClick: ({ close }) => { close(); setTimeout(testChamber, 220); } },
+        { label: 'Back to the dark', class: 'btn-accent', onClick: ({ close }) => close() }
+      ]
+    });
+  }
+
   function wireShortcuts() {
     document.addEventListener('keydown', (e) => {
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
@@ -648,6 +778,18 @@
       // Unmodified '?' - the convention every app that has this uses.
       if (!mod && e.key === '?') { e.preventDefault(); return showShortcuts(); }
 
+      const expected = KONAMI[konamiAt];
+      if (expected && (e.key === expected || e.key.toLowerCase() === expected)) {
+        konamiAt++;
+        if (konamiAt === KONAMI.length) {
+          konamiAt = 0;
+          return testChamber();
+        }
+      } else {
+        // A wrong key restarts, but may itself be the opening of the sequence.
+        konamiAt = e.key === KONAMI[0] ? 1 : 0;
+      }
+
       if (mod && e.key === '1') { e.preventDefault(); go('games'); }
       else if (mod && e.key === '2') { e.preventDefault(); go('store'); }
       else if (mod && e.key === '3') { e.preventDefault(); go('plus'); }
@@ -660,7 +802,7 @@
 
   /* --------------------------------------------------------------------- */
 
-  BN.app = { boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts, checkGameUpdates };
+  BN.app = { boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts, checkGameUpdates, paintTimeOfDay };
 
   document.addEventListener('DOMContentLoaded', () => {
     boot().catch((err) => {

@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld('blacknight', {
     removeFolder: (dir) => call('library:remove-folder', dir),
     outdated: () => call('library:outdated'),
     updateAll: () => call('library:update-all'),
+    journal: (gameId, options) => call('library:journal', gameId, options),
+    setJournalNote: (id, note) => call('library:journal-note', id, note),
+    insights: (gameId) => call('library:insights', gameId),
+    yearInReview: (year) => call('library:year-in-review', year),
     saveBackups: (id) => call('library:save-backups', id),
     backupSaves: (id) => call('library:backup-saves', id),
     restoreSave: (id, snapshot) => call('library:restore-save', id, snapshot),
@@ -92,6 +96,12 @@ contextBridge.exposeInMainWorld('blacknight', {
     setEnabled: (enabled) => call('presence:set-enabled', enabled)
   },
 
+  peers: {
+    list: () => call('peers:list'),
+    status: () => call('peers:status'),
+    setEnabled: (on) => call('peers:set-enabled', on)
+  },
+
   log: {
     write: (level, scope, message, detail) => call('log:write', level, scope, message, detail),
     location: () => call('log:location'),
@@ -115,6 +125,8 @@ contextBridge.exposeInMainWorld('blacknight', {
     openExternal: (url) => call('app:open-external', url),
     setLaunchOnStartup: (enabled) => call('app:set-launch-on-startup', enabled),
     registerIcon: (dataUrl) => call('app:register-icon', dataUrl),
+    setTrayIcon: (dataUrl) => call('app:set-tray-icon', dataUrl),
+    savePoster: (dataUrl, name) => call('app:save-poster', dataUrl, name),
     setProgress: (value) => call('app:set-progress', value),
     relaunch: () => call('app:relaunch'),
     quit: () => call('app:quit'),

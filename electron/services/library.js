@@ -223,6 +223,13 @@ class Library {
     entry.path = path.join(dir, gameId);
     this.store.save();
 
+    // A payload kept from a previous uninstall turns this into a checksum
+    // pass rather than another full transfer.
+    if (kind === 'install') {
+      const reused = this.restoreKept(gameId, dir);
+      if (reused.ok) return { ok: true, reused: true, bytes: reused.bytes, library: this.list() };
+    }
+
     this.downloader.enqueue({
       gameId,
       title: game.title,
@@ -231,6 +238,11 @@ class Library {
       installDir: dir,
       version: game.version || '1.0.0',
       sha256: game.sha256 || null,
+      // An update over an existing build only needs the blocks that changed.
+      chunkManifest: kind === 'update' ? game.chunkManifest || null : null,
+      previousFile: kind === 'update' && entry.path ? path.join(entry.path, `${gameId}.pak`) : null,
+      // Filled in by main.js when a machine on this network has the build.
+      peerUrl: this.findPeer?.(gameId, game.version || '1.0.0') || null,
       kind
     });
     return { ok: true, library: this.list() };
@@ -268,6 +280,214 @@ class Library {
         'utf8'
       );
     } catch { /* manifest is a nicety, not a requirement */ }
+  }
+
+  /* --- Keeping a verified payload -------------------------------------- */
+
+  /** Where an uninstalled-but-kept build waits for its reinstall. */
+  stashRoot() {
+    return path.join(this.dir, 'kept');
+  }
+
+  /**
+   * Moves the installed payload aside on uninstall.
+   *
+   * A rename when it is on the same volume, a copy when it is not; either way
+   * the manifest goes with it so the digest can be checked before reuse.
+   */
+  _stashPak(gameId, entry) {
+    try {
+      const pak = path.join(entry.path, `${gameId}.pak`);
+      const manifest = path.join(entry.path, 'blacknight.manifest.json');
+      if (!fs.existsSync(pak) || !fs.existsSync(manifest)) return null;
+
+      const target = path.join(this.stashRoot(), gameId);
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.mkdirSync(target, { recursive: true });
+
+      for (const [from, name] of [[pak, `${gameId}.pak`], [manifest, 'blacknight.manifest.json']]) {
+        try {
+          fs.renameSync(from, path.join(target, name));
+        } catch {
+          fs.copyFileSync(from, path.join(target, name));
+        }
+      }
+      return { dir: target, version: entry.version, at: Date.now() };
+    } catch (err) {
+      this.log?.warn?.('library', `Could not keep the payload for ${gameId}`, err);
+      return null;
+    }
+  }
+
+  /**
+   * A kept payload that still matches the build being installed.
+   *
+   * Verified against its own manifest before it is trusted - a file that has
+   * rotted on disk since it was stashed must not be silently reinstalled.
+   */
+  keptPayload(gameId, version) {
+    try {
+      const dir = path.join(this.stashRoot(), gameId);
+      const manifestPath = path.join(dir, 'blacknight.manifest.json');
+      const pak = path.join(dir, `${gameId}.pak`);
+      if (!fs.existsSync(manifestPath) || !fs.existsSync(pak)) return null;
+
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      if (version && manifest.version !== version) return null;
+      if (!manifest.sha256) return null;
+
+      const { Downloader } = require('./downloader');
+      if (Downloader.hashFile(pak) !== manifest.sha256) {
+        fs.rmSync(dir, { recursive: true, force: true });
+        return null;
+      }
+      return { dir, pak, manifest };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Puts a kept payload back, skipping the download entirely. */
+  restoreKept(gameId, targetDir) {
+    const game = this.catalog.games.find((g) => g.id === gameId);
+    const kept = this.keptPayload(gameId, game?.version || '1.0.0');
+    if (!kept) return { ok: false, reason: 'none' };
+
+    try {
+      const dest = path.join(targetDir, gameId);
+      fs.mkdirSync(dest, { recursive: true });
+      for (const name of [`${gameId}.pak`, 'blacknight.manifest.json']) {
+        try {
+          fs.renameSync(path.join(kept.dir, name), path.join(dest, name));
+        } catch {
+          fs.copyFileSync(path.join(kept.dir, name), path.join(dest, name));
+        }
+      }
+      fs.rmSync(kept.dir, { recursive: true, force: true });
+
+      const entry = this._entry(gameId);
+      entry.status = 'installed';
+      entry.version = kept.manifest.version;
+      entry.path = dest;
+      entry.installedAt = Date.now();
+      entry.keptPak = null;
+      this.store.save();
+      return { ok: true, bytes: kept.manifest.sizeBytes, library: this.list() };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  /* --- Journal and habits ---------------------------------------------- */
+
+  /**
+   * One line per session, written automatically.
+   *
+   * Kept in its own store so a long history never bloats the library file that
+   * is read on every list().
+   */
+  _journal() {
+    if (!this._journalStore) {
+      this._journalStore = new Store(this.dir, 'journal', { entries: [] });
+    }
+    return this._journalStore;
+  }
+
+  addJournalEntry(entry) {
+    const store = this._journal();
+    const entries = store.get('entries');
+    entries.unshift({ id: `j_${Date.now().toString(36)}`, at: Date.now(), note: '', ...entry });
+    // A couple of thousand sessions is a decade of play; past that, drop the
+    // oldest rather than growing without limit.
+    store.set('entries', entries.slice(0, 2000));
+    return entries[0];
+  }
+
+  journal(gameId = null, { limit = 200 } = {}) {
+    const entries = this._journal().get('entries');
+    return (gameId ? entries.filter((e) => e.gameId === gameId) : entries).slice(0, limit);
+  }
+
+  setJournalNote(id, note) {
+    const store = this._journal();
+    const entries = store.get('entries');
+    const entry = entries.find((e) => e.id === id);
+    if (!entry) return { ok: false, error: 'No such entry.' };
+    entry.note = String(note || '').slice(0, 2000);
+    store.set('entries', entries);
+    return { ok: true, entry };
+  }
+
+  /**
+   * What this player's sessions actually look like, from their own history.
+   *
+   * Used for "your sessions on this run about 90 minutes" and for the
+   * end-of-year summary. Nothing leaves the machine.
+   */
+  sessionInsights(gameId = null) {
+    const entries = this.journal(gameId, { limit: 2000 }).filter((e) => e.seconds > 60);
+    if (!entries.length) return null;
+
+    const durations = entries.map((e) => e.seconds).sort((a, b) => a - b);
+    const median = durations[Math.floor(durations.length / 2)];
+    const total = durations.reduce((sum, s) => sum + s, 0);
+
+    // Which hour of the day play usually starts, and when it usually ends.
+    const startHours = new Array(24).fill(0);
+    const endHours = new Array(24).fill(0);
+    for (const entry of entries) {
+      startHours[new Date(entry.at - entry.seconds * 1000).getHours()]++;
+      endHours[new Date(entry.at).getHours()]++;
+    }
+    const peak = (buckets) => buckets.indexOf(Math.max(...buckets));
+
+    return {
+      sessions: entries.length,
+      totalSeconds: total,
+      medianSeconds: median,
+      longestSeconds: durations[durations.length - 1],
+      usualStartHour: peak(startHours),
+      usualEndHour: peak(endHours),
+      lastPlayed: entries[0].at
+    };
+  }
+
+  /**
+   * Everything the end-of-year poster needs, computed locally.
+   */
+  yearInReview(year = new Date().getFullYear()) {
+    const from = new Date(year, 0, 1).getTime();
+    const to = new Date(year + 1, 0, 1).getTime();
+    const entries = this.journal(null, { limit: 2000 }).filter((e) => e.at >= from && e.at < to);
+    if (!entries.length) return { year, sessions: 0, totalSeconds: 0, titles: [] };
+
+    const byGame = new Map();
+    const hours = new Array(24).fill(0);
+    let longest = entries[0];
+
+    for (const entry of entries) {
+      const bucket = byGame.get(entry.gameId) || { gameId: entry.gameId, title: entry.title, seconds: 0, sessions: 0 };
+      bucket.seconds += entry.seconds;
+      bucket.sessions++;
+      byGame.set(entry.gameId, bucket);
+      hours[new Date(entry.at).getHours()]++;
+      if (entry.seconds > longest.seconds) longest = entry;
+    }
+
+    const titles = [...byGame.values()].sort((a, b) => b.seconds - a.seconds);
+    return {
+      year,
+      sessions: entries.length,
+      totalSeconds: entries.reduce((sum, e) => sum + e.seconds, 0),
+      titles,
+      topTitle: titles[0] || null,
+      longestSession: { title: longest.title, seconds: longest.seconds, at: longest.at },
+      peakHour: hours.indexOf(Math.max(...hours)),
+      nightFraction: entries.filter((e) => {
+        const h = new Date(e.at).getHours();
+        return h >= 22 || h < 5;
+      }).length / entries.length
+    };
   }
 
   /* --- Saves ---------------------------------------------------------- */
@@ -353,7 +573,8 @@ class Library {
     }
   }
 
-  uninstall(gameId, { keepSaves = true } = {}) {
+  uninstall(gameId, { keepSaves = true, keepPak = null } = {}) {
+    if (keepPak === null) keepPak = this.settings.get('keepPakOnUninstall') === true;
     const entries = this.store.get('entries');
     const entry = entries[gameId];
     if (!entry) return { ok: false, error: 'Not installed.' };
@@ -363,6 +584,13 @@ class Library {
     // before it is deleted - otherwise "keep my saves" quietly means nothing.
     let savedAside = false;
     if (keepSaves) savedAside = this.backupSaves(gameId).ok;
+
+    // Optionally hold on to the verified payload. Reinstalling then costs a
+    // checksum pass instead of another 90 GB off someone's connection.
+    let keptPak = null;
+    if (keepPak && entry.path) {
+      keptPak = this._stashPak(gameId, entry);
+    }
 
     try {
       if (entry.path && fs.existsSync(entry.path)) fs.rmSync(entry.path, { recursive: true, force: true });
@@ -376,12 +604,14 @@ class Library {
       } catch { /* nothing to discard */ }
     }
 
+    entry.keptPak = keptPak || null;
+
     entry.status = 'owned';
     entry.path = null;
     entry.version = null;
     entry.installedAt = null;
     this.store.save();
-    return { ok: true, savesKept: keepSaves && savedAside, library: this.list() };
+    return { ok: true, savesKept: keepSaves && savedAside, pakKept: !!keptPak, library: this.list() };
   }
 
   /** Re-checks the install on disk against its manifest. */
@@ -502,6 +732,20 @@ class Library {
       : null;
 
     this.store.save();
+
+    // One line per session, so playtime is a history rather than a single
+    // ever-growing number.
+    if (seconds > 30 && this.settings.get('playJournal') !== false) {
+      const game = this.catalog.games.find((g) => g.id === gameId);
+      this.addJournalEntry({
+        gameId,
+        title: game?.title || gameId,
+        seconds,
+        version: entry.version || null,
+        crashed
+      });
+    }
+
     this.downloader.setGameRunning?.(this.sessions.size > 0);
     if (this.settings.get('backupSaves') !== false) {
       this.backupSaves(gameId, { keep: Number(this.settings.get('saveBackupsKept')) || 5 });

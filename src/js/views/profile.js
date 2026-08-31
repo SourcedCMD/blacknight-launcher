@@ -77,7 +77,15 @@
     const membership = el('button', { class: 'btn btn-sm btn-chrome' });
     membership.innerHTML = `${icon('crown')} ${user?.tier === 'plus' ? 'Membership' : 'Join BlackNight+'}`;
     membership.addEventListener('click', () => BN.app.go('plus'));
-    actions.append(edit, membership);
+    const journal = el('button', { class: 'btn btn-sm btn-ghost' });
+    journal.innerHTML = `${icon('clock')} Journal`;
+    journal.addEventListener('click', () => BN.views.journal.open());
+
+    const review = el('button', { class: 'btn btn-sm btn-ghost' });
+    review.innerHTML = `${icon('sparkles')} Year in review`;
+    review.addEventListener('click', () => BN.views.journal.yearInReview());
+
+    actions.append(journal, review, edit, membership);
 
     const most = view.querySelector('#most-played');
     if (most) most.appendChild(BN.views.games.libraryRow(mostPlayed));
@@ -114,7 +122,9 @@
   /** Fills the header with the sky generated from this account's seed. */
   function paintBanner(user) {
     const host = document.getElementById('profile-banner');
-    if (host) host.innerHTML = BN.art.profileBanner(user);
+    if (!host) return;
+    host.innerHTML = BN.art.profileBanner(user);
+    BN.util.coverSvg(host);
   }
 
   BN.views = BN.views || {};

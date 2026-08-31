@@ -120,6 +120,44 @@
         toggle('backupSaves', 'Back up saves when a game closes', 'Keeps the most recent few versions, so a corrupt save is recoverable.'),
         slider('saveBackupsKept', 'Snapshots kept per title', null, { min: 1, max: 20, step: 1, format: (v) => `${v}` })
       ),
+      group(
+        'Atmosphere',
+        'The launcher draws itself from your library and the clock.',
+        toggle('libraryConstellation', 'Show my library as a constellation', 'Each title becomes a star: brighter the more recently you played it.', () =>
+          BN.fx.setLibrary(BN.state.data.library)
+        ),
+        toggle('timeOfDayTint', 'Follow the time of day', 'Shifts the background from dusk through to deep night.', () =>
+          BN.app.paintTimeOfDay()
+        ),
+        toggle('launchRitual', 'Play the launch sequence', 'A short title card when a game starts.'),
+        toggle('titleSignatures', 'Give each title its own sound', 'Derives a launch sting from the game, not a single shared cue.')
+      ),
+      group(
+        'History',
+        'Recorded on this machine, never uploaded.',
+        toggle('playJournal', 'Keep a play journal', 'One line per session, with room for a note.'),
+        toggle('sessionInsights', 'Show session insights', 'Tells you how long your sessions here usually run.'),
+        row(
+          'Play journal',
+          'Every session recorded so far.',
+          (() => {
+            const b = el('button', { class: 'btn btn-sm btn-ghost' });
+            b.innerHTML = `${icon('clock')} Open`;
+            b.addEventListener('click', () => BN.views.journal.open());
+            return b;
+          })()
+        ),
+        row(
+          'Your year in the dark',
+          'A poster generated from this year of play.',
+          (() => {
+            const b = el('button', { class: 'btn btn-sm btn-ghost' });
+            b.innerHTML = `${icon('sparkles')} View`;
+            b.addEventListener('click', () => BN.views.journal.yearInReview());
+            return b;
+          })()
+        )
+      ),
       group('Setup', null, replayOnboardingRow())
     ];
   }
@@ -240,6 +278,13 @@
         })
       ),
       group('Schedule', 'Hold transfers until the small hours.', ...windowRows()),
+      group(
+        'Transfer savings',
+        'Both trade a little local work for a lot less downloading.',
+        toggle('deltaPatching', 'Patch updates block by block', 'An update transfers only the parts of a build that actually changed.'),
+        toggle('keepPakOnUninstall', 'Keep game files after uninstalling', 'Reinstalling then costs a checksum pass instead of the whole download.'),
+        lanRow()
+      ),
       group(
         'Storage',
         null,
@@ -386,6 +431,44 @@
 
     paint([]);
     BN.api.library.folders().then(paint);
+    return node;
+  }
+
+  /**
+   * LAN sharing, reporting how many machines it can actually see.
+   *
+   * It touches the network, so it stays opt-in and says plainly what it does.
+   */
+  function lanRow() {
+    const node = el('div', { class: 'set-row' });
+
+    const paint = (status) => {
+      const found = status.peers
+        ? `${status.peers} launcher${status.peers === 1 ? '' : 's'} on this network`
+        : 'No other launchers found yet.';
+      node.innerHTML = `
+        <div class="grow">
+          <div class="label">Share installs over the local network</div>
+          <div class="desc">${status.enabled ? esc(found) : 'Downloads the same build twice when another machine here already has it.'}</div>
+        </div>`;
+
+      const control = el('div', { class: 'control' });
+      const box = el('button', {
+        class: 'switch',
+        role: 'switch',
+        'aria-checked': String(!!status.enabled),
+        'aria-label': 'Share installs over the local network'
+      });
+      box.addEventListener('click', async () => {
+        await BN.api.peers.setEnabled(!status.enabled);
+        paint(await BN.api.peers.status());
+      });
+      control.append(box);
+      node.append(control);
+    };
+
+    paint({ enabled: false, peers: 0 });
+    BN.api.peers.status().then(paint);
     return node;
   }
 

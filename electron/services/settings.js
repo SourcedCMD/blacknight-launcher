@@ -17,6 +17,12 @@ const DEFAULTS = {
   pauseOnMetered: true,
   autoUpdateGames: true,
   yieldWhilePlaying: true,
+  // Delta patching and LAN sharing: both trade a little local work for a lot
+  // less transfer. Sharing touches the network, so it is opt-in.
+  deltaPatching: true,
+  lanSharing: false,
+  peerId: '',
+  keepPakOnUninstall: false,
   playingBandwidthPercent: 20,
   downloadWindowEnabled: false,
   downloadWindowStart: 1, // hour, 24h clock
@@ -42,6 +48,15 @@ const DEFAULTS = {
   // Interface
   lastRoute: 'games',
   locale: 'auto',
+  // The starfield is drawn from your own library rather than at random.
+  libraryConstellation: true,
+  timeOfDayTint: true,
+  launchRitual: true,
+  titleSignatures: true,
+
+  // Habits
+  sessionInsights: true,
+  playJournal: true,
 
   // Content
   // Empty means "use the copy that shipped with this build". Point it at a

@@ -71,6 +71,133 @@
         vy: -0.02 - Math.random() * 0.06,
         a: 0.012 + Math.random() * 0.03
       }));
+
+      this.seedConstellation();
+    }
+
+    /**
+     * Turns the player's own library into the brightest stars in the sky.
+     *
+     * Position comes from each title's art seed, so a game always sits in the
+     * same place; size follows how long it has been played and brightness how
+     * recently. The background stops being decoration and becomes a picture of
+     * how someone actually plays - which is the whole point of a launcher that
+     * calls itself BlackNight.
+     */
+    seedConstellation(library) {
+      if (library) this.library = library;
+      this.constellation = [];
+      if (!this.library?.length) return;
+      if (BN.state?.data?.settings?.libraryConstellation === false) return;
+
+      const owned = this.library.filter((g) => g.owned || g.installed);
+      const source = owned.length ? owned : this.library;
+      const now = Date.now();
+      const mostPlayed = Math.max(60, ...source.map((g) => g.playtimeSeconds || 0));
+
+      this.constellation = source.map((game) => {
+        // Deterministic placement: the same title lands in the same patch of
+        // sky on every machine, kept off the edges where the UI sits.
+        const rand = BN.util.rng(BN.util.hashString(game.id));
+        const played = (game.playtimeSeconds || 0) / mostPlayed;
+        const idleDays = game.lastPlayed ? (now - game.lastPlayed) / 86400000 : null;
+        // Never played is faint but present; recently played burns brightest.
+        const recency = idleDays === null ? 0.28 : Math.max(0.3, 1 - idleDays / 45);
+
+        return {
+          gameId: game.id,
+          title: game.title,
+          x: (0.08 + rand() * 0.84) * this.w,
+          y: (0.1 + rand() * 0.72) * this.h,
+          r: 1.5 + played * 2.6,
+          depth: 0.55 + rand() * 0.45,
+          tw: rand() * Math.PI * 2,
+          twSpeed: 0.25 + rand() * 0.5,
+          glow: recency,
+          installed: !!game.installed
+        };
+      });
+    }
+
+    /**
+     * The library's own stars, drawn over the ambient ones: brighter, tinted
+     * with the accent, and joined by faint lines so it reads as a constellation
+     * rather than a handful of dots.
+     */
+    drawConstellation(ctx, dt, ox, oy) {
+      const stars = this.constellation;
+      if (!stars?.length) return;
+      const [ar, ag, ab] = this.accent;
+
+      // Link each star to its nearest neighbour. Cheap at library sizes, and
+      // it is what turns scattered points into a shape.
+      if (this.mode === 'full') {
+        ctx.strokeStyle = `rgba(${ar}, ${ag}, ${ab}, 0.09)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < stars.length; i++) {
+          let best = null;
+          let bestDist = Infinity;
+          for (let j = 0; j < stars.length; j++) {
+            if (i === j) continue;
+            const dx = stars[i].x - stars[j].x;
+            const dy = stars[i].y - stars[j].y;
+            const dist = dx * dx + dy * dy;
+            if (dist < bestDist) { bestDist = dist; best = stars[j]; }
+          }
+          if (best && bestDist < 420 * 420) {
+            ctx.moveTo(stars[i].x + ox * stars[i].depth, stars[i].y + oy * stars[i].depth);
+            ctx.lineTo(best.x + ox * best.depth, best.y + oy * best.depth);
+          }
+        }
+        ctx.stroke();
+      }
+
+      for (const s of stars) {
+        s.tw += (dt / 1000) * s.twSpeed;
+        const x = s.x + ox * s.depth;
+        const y = s.y + oy * s.depth;
+        const pulse = 0.72 + Math.sin(s.tw) * 0.28;
+        const alpha = clamp(s.glow * pulse, 0, 1);
+        const hot = s.gameId === this.hovered;
+
+        // A soft halo makes the library stars read as nearer than the rest.
+        if (this.mode === 'full') {
+          const halo = ctx.createRadialGradient(x, y, 0, x, y, s.r * (hot ? 14 : 8));
+          halo.addColorStop(0, `rgba(${ar}, ${ag}, ${ab}, ${alpha * (hot ? 0.5 : 0.28)})`);
+          halo.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = halo;
+          ctx.beginPath();
+          ctx.arc(x, y, s.r * (hot ? 14 : 8), 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = s.installed ? '#ffffff' : `rgb(${ar}, ${ag}, ${ab})`;
+        ctx.beginPath();
+        ctx.arc(x, y, s.r * (hot ? 1.7 : 1), 0, Math.PI * 2);
+        ctx.fill();
+
+        if (hot) {
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = '#eef1f7';
+          ctx.font = '500 12px ui-sans-serif, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(s.title, x, y - s.r * 2.4 - 8);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    /** The library star under a point, if the pointer is close enough. */
+    starAt(px, py) {
+      if (!this.constellation?.length) return null;
+      for (const s of this.constellation) {
+        const dx = s.x - px;
+        const dy = s.y - py;
+        if (dx * dx + dy * dy < 18 * 18) return s;
+      }
+      return null;
     }
 
     setMode(mode) {
@@ -133,6 +260,8 @@
         ctx.arc(s.x + ox * s.depth, s.y + oy * s.depth, s.r, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      this.drawConstellation(ctx, dt, ox, oy);
       ctx.globalAlpha = 1;
 
       if (this.mode === 'full') {
@@ -288,12 +417,48 @@
     setTimeout(() => layer.remove(), 1400);
   }
 
+  /**
+   * Makes the library stars respond to the pointer.
+   *
+   * The canvas sits behind everything and is not interactive, so this listens
+   * on the window and only claims a click when one actually lands on a star -
+   * the UI on top always wins.
+   */
+  function bindConstellation() {
+    if (!bg) return;
+
+    window.addEventListener('pointermove', (e) => {
+      if (!bg.constellation?.length) return;
+      // Anything over real UI is not a sky interaction.
+      const overUi = e.target.closest('.view-host, .sidebar, .topnav, .titlebar, .overlay, .palette-overlay');
+      const hit = overUi ? null : bg.starAt(e.clientX, e.clientY);
+      const next = hit?.gameId || null;
+      if (next !== bg.hovered) {
+        bg.hovered = next;
+        document.body.style.cursor = next ? 'pointer' : '';
+        if (next) BN.sound?.play('hover');
+      }
+    });
+
+    window.addEventListener('click', (e) => {
+      if (!bg.hovered) return;
+      const overUi = e.target.closest('.view-host, .sidebar, .topnav, .titlebar, .overlay, .palette-overlay');
+      if (overUi) return;
+      BN.components?.openDetail(bg.hovered);
+    });
+  }
+
   BN.fx = {
     initBackground(canvas) {
       bg = new Background(canvas);
+      bindConstellation();
       return bg;
     },
     get background() { return bg; },
+    /** Called whenever the library changes so the sky follows it. */
+    setLibrary(library) {
+      bg?.seedConstellation(library);
+    },
     initPointer,
     tilt,
     reveal,

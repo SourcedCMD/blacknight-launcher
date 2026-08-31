@@ -869,3 +869,101 @@ kbd {
   font-size: 0.72rem;
   color: var(--text-faint);
 }
+
+/* --- Launch ritual -------------------------------------------------------- */
+
+.ritual {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  animation: ritual-in 420ms var(--ease-out) both;
+  overflow: hidden;
+}
+.ritual.out { animation: ritual-out 520ms var(--ease-out) forwards; }
+
+.ritual-art {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  animation: ritual-bloom 2100ms var(--ease-out) both;
+}
+.ritual-art svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ritual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 20%, var(--bg) 78%);
+}
+
+.ritual-body {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  animation: rise-in 700ms var(--ease-out) 160ms both;
+}
+.ritual-eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+}
+.ritual-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ritual-line {
+  margin: 22px auto 0;
+  width: min(280px, 40vw);
+  height: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.ritual-line i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-100%);
+  animation: ritual-sweep 1500ms var(--ease-out) 220ms both;
+}
+
+@keyframes ritual-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ritual-out { to { opacity: 0; transform: scale(1.04); } }
+@keyframes ritual-bloom { from { transform: scale(1.16); opacity: 0; } to { transform: scale(1); opacity: 0.5; } }
+@keyframes ritual-sweep { to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ritual, .ritual-art, .ritual-body, .ritual-line i { animation-duration: 1ms; }
+}
+
+/* --- Umbra test chamber --------------------------------------------------- */
+
+.chamber { position: relative; border-radius: var(--r-lg); overflow: hidden; }
+.chamber-art { position: absolute; inset: 0; opacity: 0.75; }
+.chamber-art svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.chamber-body {
+  position: relative;
+  z-index: 2;
+  padding: 48px 32px 32px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.86) 55%);
+}
+.chamber-eyebrow {
+  font-size: 0.66rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.chamber-body h2 {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  margin: 8px 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.chamber-body p { color: var(--text-dim); line-height: 1.7; font-size: 0.86rem; max-width: 54ch; }

@@ -6,6 +6,7 @@ const http = require('http');
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
 const { Store } = require('./store');
+const { buildManifest, diff, applyCopies, summarise } = require('./chunks');
 
 const TICK_MS = 250;
 const SPEED_WINDOW = 8; // samples kept for the smoothed speed readout
@@ -66,7 +67,7 @@ class Downloader extends EventEmitter {
     };
   }
 
-  enqueue({ gameId, title, totalBytes, url = null, installDir, kind = 'install', version = '1.0.0', sha256 = null }) {
+  enqueue({ gameId, title, totalBytes, url = null, installDir, kind = 'install', version = '1.0.0', sha256 = null, chunkManifest = null, previousFile = null, peerUrl = null }) {
     const items = this.store.get('items');
     const existing = items.find((i) => i.gameId === gameId && i.status !== 'completed' && i.status !== 'cancelled');
     if (existing) return this._decorate(existing);
@@ -82,6 +83,13 @@ class Downloader extends EventEmitter {
       // Supplied by the catalog. Without one the transfer can only be checked
       // for length, which is recorded honestly rather than called "verified".
       sha256,
+      // Set when this is an update and the old build is still on disk: the
+      // blocks that did not change are lifted locally instead of downloaded.
+      chunkManifest,
+      previousFile,
+      // A machine on the same network that already has this exact build.
+      peerUrl,
+      reusedBytes: 0,
       simulated: !url,
       dest,
       file: path.join(dest, `${gameId}.pak`),
@@ -217,8 +225,43 @@ class Downloader extends EventEmitter {
     this.windowTimer.unref?.();
   }
 
+  /**
+   * Lifts every unchanged block off the previous build before the transfer
+   * starts, so the reused portion counts as progress immediately and the
+   * network only ever sees what actually changed.
+   */
+  _applyDelta(item) {
+    if (!item.chunkManifest || !item.previousFile) return false;
+    if (this.settings.get('deltaPatching') === false) return false;
+    if (!fs.existsSync(item.previousFile)) return false;
+
+    try {
+      const current = buildManifest(item.previousFile, { chunkSize: item.chunkManifest.chunkSize });
+      const plan = summarise(diff(current, item.chunkManifest));
+      if (plan.reusedBytes <= 0) return false;
+
+      fs.mkdirSync(path.dirname(item.file), { recursive: true });
+      const copied = applyCopies(item.previousFile, item.file, plan.plan);
+
+      item.reusedBytes = copied;
+      item.receivedBytes = copied;
+      item.deltaPlan = { reusedBytes: copied, fetchedBytes: plan.fetchedBytes, savedPercent: plan.savedPercent };
+      this.store.save();
+      this.emit('changed', this.list());
+      return true;
+    } catch {
+      // A delta that cannot be applied is not an error: fall back to a normal
+      // transfer rather than failing the update.
+      return false;
+    }
+  }
+
   _start(item) {
     fs.mkdirSync(item.dest, { recursive: true });
+
+    // Before anything is transferred, take what the previous build already
+    // holds. Only runs once per item; a resumed download skips it.
+    if (!item.deltaPlan && item.chunkManifest) this._applyDelta(item);
 
     // Resume from whatever is already on disk rather than trusting the record.
     let onDisk = 0;
@@ -234,6 +277,9 @@ class Downloader extends EventEmitter {
     const rt = { samples: [], speed: 0, lastBytes: item.receivedBytes, lastAt: Date.now() };
     this.active.set(item.id, rt);
 
+    // A machine on the same network beats the internet every time, and the
+    // payload is checksummed on completion either way.
+    rt.source = item.peerUrl ? 'peer' : item.url ? 'origin' : 'simulated';
     if (item.simulated) this._startSimulated(item, rt);
     else this._startHttp(item, rt);
 
@@ -298,11 +344,14 @@ class Downloader extends EventEmitter {
   }
 
   _startHttp(item, rt) {
-    const client = item.url.startsWith('https') ? https : http;
+    // A peer on the same network serves the identical payload, verified by the
+    // same checksum, so it is simply a better URL for the same transfer.
+    const source = rt.source === 'peer' && item.peerUrl ? item.peerUrl : item.url;
+    const client = source.startsWith('https') ? https : http;
     const headers = item.receivedBytes > 0 ? { Range: `bytes=${item.receivedBytes}-` } : {};
     rt.mode = 'http';
 
-    const req = client.get(item.url, { headers }, (res) => {
+    const req = client.get(source, { headers }, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
         item.url = res.headers.location;
         this.store.save();
@@ -330,7 +379,19 @@ class Downloader extends EventEmitter {
       res.on('error', (err) => this._fail(item, err.message));
       out.on('error', (err) => this._fail(item, err.message));
     });
-    req.on('error', (err) => this._fail(item, err.message));
+    req.on('error', (err) => {
+      // A peer that dropped off the network is not a failure: forget it and
+      // let the next attempt go to the origin.
+      if (rt.source === 'peer') {
+        item.peerUrl = null;
+        this.store.save();
+        this._stopRuntime(item.id, { keepStatus: true });
+        item.status = 'queued';
+        this._pump();
+        return;
+      }
+      this._fail(item, err.message);
+    });
     rt.req = req;
   }
 

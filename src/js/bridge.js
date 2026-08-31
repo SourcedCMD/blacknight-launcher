@@ -278,6 +278,12 @@
       async removeFolder() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async outdated() { return []; },
       async updateAll() { return { ok: true, started: [], pending: [] }; },
+      async journal() { return []; },
+      async setJournalNote() { return { ok: true }; },
+      async insights() { return null; },
+      async yearInReview(year) {
+        return { year: year || new Date().getFullYear(), sessions: 0, totalSeconds: 0, titles: [], topTitle: null };
+      },
       async saveBackups() { return []; },
       async backupSaves() { return { ok: false, reason: 'no-saves' }; },
       async restoreSave() { return { ok: false, error: 'Not available in the browser preview.' }; },
@@ -409,6 +415,13 @@
       async check() { return { level: 'unknown', minimum: null, recommended: null }; }
     },
 
+    // A browser tab has no LAN presence to offer.
+    peers: {
+      async list() { return []; },
+      async status() { return { enabled: false, port: 0, peers: 0 }; },
+      async setEnabled() { return { ok: false, reason: 'disabled' }; }
+    },
+
     // Diagnostics go to the browser console rather than a file.
     log: {
       async write(level, scope, message, detail) {
@@ -449,6 +462,8 @@
       async openExternal(url) { if (/^https:\/\//i.test(url)) window.open(url, '_blank', 'noopener'); },
       async setLaunchOnStartup(v) { return !!v; },
       async registerIcon() { return false; },
+      async setTrayIcon() { return false; },
+      async savePoster() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async setProgress() {},
       async relaunch() { location.reload(); },
       async quit() {},

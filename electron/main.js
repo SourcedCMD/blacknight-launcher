@@ -13,6 +13,7 @@ const { Presence } = require('./services/presence');
 const { check: checkRequirements } = require('./services/requirements');
 const { Logger } = require('./services/logger');
 const { Catalog } = require('./services/catalog');
+const { Peers } = require('./services/peers');
 
 const PROTOCOL = 'blacknight';
 
@@ -24,7 +25,7 @@ if (isDev) app.setPath('userData', `${app.getPath('userData')} (dev)`);
 
 let win = null;
 let tray = null;
-let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, log;
+let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, peers, log;
 let quitting = false;
 let dataDir;
 
@@ -145,7 +146,14 @@ function bootServices() {
   hardware = new Hardware(app, settings);
   presence = new Presence({ enabled: settings.get('richPresence') !== false });
 
-  // Rich presence follows the play session the library already tracks.
+  peers = new Peers(settings, log, { library });
+  // The library asks before every install whether a machine on this network
+  // already has the build.
+  library.findPeer = (gameId, version) => peers.find(gameId, version)?.url || null;
+
+  // Rich presence follows the play session the library already tracks. The
+  // tagline is the interesting half - "Playing Eclipse Protocol" says less
+  // than what the game is actually about.
   library.onSessionChange = (gameId, running) => {
     const game = catalog.games.find((g) => g.id === gameId);
     if (!running) return presence.clear();
@@ -156,6 +164,7 @@ function bootServices() {
     });
   };
   presence.connect();
+  if (settings.get('lanSharing')) peers.start();
 
   const forward = (channel) => (payload) => {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -379,6 +388,46 @@ function registerIpc() {
   handle('downloads:clear-finished', () => downloader.clearFinished());
 
   /* Shell / system --------------------------------------------------- */
+  /* Journal, habits and the year in review ------------------------------ */
+  handle('library:journal', (gameId, options) => library.journal(gameId, options || {}));
+  handle('library:journal-note', (id, note) => library.setJournalNote(id, note));
+  handle('library:insights', (gameId) => library.sessionInsights(gameId));
+  handle('library:year-in-review', (year) => library.yearInReview(year));
+
+  /* LAN sharing --------------------------------------------------------- */
+  handle('peers:list', () => peers.list());
+  handle('peers:status', () => ({ enabled: peers.enabled, port: peers.port, peers: peers.list().length }));
+  handle('peers:set-enabled', (on) => peers.setEnabled(on));
+
+  /* The tray icon carries download progress ----------------------------- */
+  handle('app:set-tray-icon', (dataUrl) => {
+    try {
+      if (!tray) return false;
+      tray.setImage(nativeImage.createFromDataURL(dataUrl));
+      return true;
+    } catch (err) {
+      log.debug('tray', 'Could not update the tray icon', err);
+      return false;
+    }
+  });
+
+  /* Year-in-review poster ----------------------------------------------- */
+  handle('app:save-poster', async (dataUrl, suggested) => {
+    try {
+      const picked = await dialog.showSaveDialog(win, {
+        defaultPath: path.join(app.getPath('pictures'), suggested || 'BlackNight.png'),
+        filters: [{ name: 'PNG image', extensions: ['png'] }]
+      });
+      if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+      const base64 = String(dataUrl).replace(/^data:image\/png;base64,/, '');
+      fs.writeFileSync(picked.filePath, Buffer.from(base64, 'base64'));
+      return { ok: true, path: picked.filePath };
+    } catch (err) {
+      log.warn('review', 'Could not save the poster', err);
+      return { ok: false, error: err.message };
+    }
+  });
+
   /* Diagnostics -------------------------------------------------------- */
   handle('log:write', (level, scope, message, detail) => {
     // The renderer reports its own failures through here, so a broken view
@@ -615,5 +664,6 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     downloader?.shutdown();
     presence?.disconnect();
+    peers?.stop();
   });
 }

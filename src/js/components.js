@@ -63,11 +63,14 @@
     const action = primaryAction(game);
     switch (action.key) {
       case 'play': {
-        BN.sound?.play('launch');
         if (node) BN.fx.burst(node);
+        const ritual = launchRitual(game);
         const result = await BN.state.launch(game.id);
+        if (!result.ok) ritual.abort();
         if (result.ok) {
           BN.ui.toast('Launching ' + game.title, result.message || 'Have a good night out there.', { kind: 'ok', ms: 6000 });
+          // Their own history, shown once the launch has actually taken.
+          setTimeout(() => BN.views.journal?.noteBeforeLaunch(game.id), 2600);
           if (BN.state.data.settings.exitOnGameLaunch) setTimeout(() => BN.api.app.quit(), 1200);
         } else {
           BN.ui.toast('Could not launch', result.error, { kind: 'error' });
@@ -434,6 +437,52 @@
     }
 
     return sheet;
+  }
+
+  /**
+   * The lights going down.
+   *
+   * Starting a game was a spinner and a toast. This gives it a beat: the key
+   * art blooms up over the shell, the title's own sting plays, and the whole
+   * launcher dims out of the way. It resolves on its own, and aborts cleanly
+   * if the launch turns out to have failed.
+   */
+  function launchRitual(game) {
+    if (BN.state.data.settings.launchRitual === false || BN.state.data.settings.reduceMotion) {
+      BN.sound?.signature(game);
+      return { abort() {} };
+    }
+
+    const layer = el('div', { class: 'ritual' });
+    layer.innerHTML = `
+      <div class="ritual-art">${BN.art.hero(game)}</div>
+      <div class="ritual-body">
+        <div class="ritual-eyebrow">Starting</div>
+        <div class="ritual-title chrome-text">${esc(game.title)}</div>
+        <div class="ritual-line"><i></i></div>
+      </div>`;
+    BN.util.coverSvg(layer.querySelector('.ritual-art'));
+    document.body.appendChild(layer);
+
+    // The title's signature, not the generic launch cue.
+    BN.sound?.signature(game);
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      layer.classList.add('out');
+      layer.addEventListener('animationend', () => layer.remove(), { once: true });
+      setTimeout(() => layer.remove(), 900);
+    };
+
+    const timer = setTimeout(finish, 2100);
+    return {
+      abort() {
+        clearTimeout(timer);
+        finish();
+      }
+    };
   }
 
   /**
@@ -823,6 +872,6 @@
 
   BN.components = {
     primaryAction, runAction, actionButton, statusLine, statusBadge, priceTag,
-    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, STATUS_LABEL
+    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, launchRitual, STATUS_LABEL
   };
 })();
