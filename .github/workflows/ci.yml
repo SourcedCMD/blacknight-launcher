@@ -26,6 +26,11 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # The catalog is hosted, so a bad field should fail here rather than on
+      # someone's machine.
+      - name: Validate the catalog
+        run: npm run check:catalog
+
       # The services are plain Node, so they are checked on Linux even though
       # the app itself only ships for Windows.
       - name: Check every file parses

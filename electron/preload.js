@@ -59,6 +59,14 @@ contextBridge.exposeInMainWorld('blacknight', {
     removeFolder: (dir) => call('library:remove-folder', dir),
     outdated: () => call('library:outdated'),
     updateAll: () => call('library:update-all'),
+    channels: (id) => call('library:channels', id),
+    channel: (id) => call('library:channel', id),
+    setChannel: (id, channelId) => call('library:set-channel', id, channelId),
+    rollbackAvailable: (id) => call('library:rollback-available', id),
+    rollback: (id) => call('library:rollback', id),
+    scan: () => call('library:scan'),
+    adopt: (id) => call('library:adopt', id),
+    dataUsage: () => call('library:data-usage'),
     journal: (gameId, options) => call('library:journal', gameId, options),
     setJournalNote: (id, note) => call('library:journal-note', id, note),
     insights: (gameId) => call('library:insights', gameId),
@@ -96,6 +104,12 @@ contextBridge.exposeInMainWorld('blacknight', {
     setEnabled: (enabled) => call('presence:set-enabled', enabled)
   },
 
+  achievements: {
+    list: () => call('achievements:list'),
+    progress: () => call('achievements:progress'),
+    evaluate: () => call('achievements:evaluate')
+  },
+
   peers: {
     list: () => call('peers:list'),
     status: () => call('peers:status'),
@@ -131,6 +145,7 @@ contextBridge.exposeInMainWorld('blacknight', {
     relaunch: () => call('app:relaunch'),
     quit: () => call('app:quit'),
     onNavigate: (handler) => on('nav:go', handler),
-    onDeepLink: (handler) => on('deeplink', handler)
+    onDeepLink: (handler) => on('deeplink', handler),
+    onAchievement: (handler) => on('achievement', handler)
   }
 });

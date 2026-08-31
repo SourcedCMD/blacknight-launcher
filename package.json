@@ -21,6 +21,7 @@
     "test": "node --test",
     "web": "node scripts/dev-server.js",
     "icon": "node scripts/make-icon.js",
+    "check:catalog": "node scripts/check-catalog.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis"
   },
@@ -52,7 +53,8 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "portable"
       ],
       "icon": "build/icon.ico",
       "artifactName": "BlackNightLauncher-Setup-${version}.${ext}"
@@ -72,6 +74,21 @@
         "owner": "SourcedCMD",
         "repo": "blacknight-launcher"
       }
-    ]
+    ],
+    "portable": {
+      "artifactName": "BlackNightLauncher-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "icon": "build/icons",
+      "artifactName": "BlackNightLauncher-${version}.${ext}",
+      "desktop": {
+        "Name": "BlackNight Launcher",
+        "Categories": "Game;"
+      }
+    }
   }
 }

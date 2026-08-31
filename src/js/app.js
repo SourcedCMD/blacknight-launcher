@@ -163,6 +163,10 @@
     go(BN.state.data.settings.lastRoute || 'games');
     BN.sound.play('boot');
     BN.onboarding?.maybeRun();
+
+    // Quiet unless there is genuinely something on disk to reclaim.
+    setTimeout(() => BN.views.achievements.offerRecovery(), 4000);
+    BN.api.app.onAchievement?.((earned) => BN.views.achievements.celebrate(earned));
   }
 
   function buildNav() {
@@ -477,6 +481,15 @@
       return;
     }
     paintTrayIcon(queue.progress);
+
+    // Every quarter, not every tick: a live region that fires four times a
+    // second is worse than one that never fires at all.
+    const step = Math.floor(queue.progress * 4);
+    if (step !== lastAnnouncedStep) {
+      lastAnnouncedStep = step;
+      if (step > 0 && step < 4) BN.ui.announce(`Downloads ${step * 25} percent complete`);
+    }
+
     pill.classList.add('active');
     pill.innerHTML = `
       ${icon('download', 'style="width:13px;height:13px"')}
@@ -582,6 +595,7 @@
       { group: 'Actions', label: 'Redeem a code', icon: 'sparkles', run: redeemCode },
       { group: 'Actions', label: 'Keyboard shortcuts', icon: 'keyboard', hint: '?', run: showShortcuts },
       { group: 'Actions', label: 'Play journal', icon: 'clock', keywords: 'history sessions log', run: () => BN.views.journal.open() },
+      { group: 'Actions', label: 'Achievements', icon: 'award', keywords: 'badges trophies', run: () => BN.views.achievements.open() },
       { group: 'Actions', label: 'Your year in the dark', icon: 'sparkles', keywords: 'review wrapped stats year', run: () => BN.views.journal.yearInReview() },
       { group: 'Account', label: 'Sign out', icon: 'logout', run: signOut }
     );
@@ -634,6 +648,7 @@
   /* --- Tray icon ---------------------------------------------------------- */
 
   let lastTrayPercent = -1;
+  let lastAnnouncedStep = -1;
 
   /**
    * Draws the download percentage as a ring around the mark.

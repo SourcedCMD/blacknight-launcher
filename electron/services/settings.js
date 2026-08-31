@@ -23,6 +23,8 @@ const DEFAULTS = {
   lanSharing: false,
   peerId: '',
   keepPakOnUninstall: false,
+  keepRollback: true,
+  backgroundVerify: true,
   playingBandwidthPercent: 20,
   downloadWindowEnabled: false,
   downloadWindowStart: 1, // hour, 24h clock

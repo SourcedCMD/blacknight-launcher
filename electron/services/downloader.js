@@ -469,6 +469,14 @@ class Downloader extends EventEmitter {
     item.completedAt = Date.now();
     item.receivedBytes = item.totalBytes;
     this.store.save();
+
+    // Only the bytes that genuinely moved count towards data usage: blocks
+    // lifted from a previous build never touched the network.
+    const transferred = Math.max(0, item.totalBytes - (item.reusedBytes || 0));
+    const rt = this.active.get(item.id);
+    this.emit('transferred', { bytes: transferred, source: rt?.source === 'peer' ? 'peer' : 'origin', item });
+    if (item.reusedBytes) this.emit('reused', { bytes: item.reusedBytes, item });
+
     this.emit('completed', this._decorate(item));
     this.emit('changed', this.list());
     this._pump();

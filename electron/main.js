@@ -14,6 +14,7 @@ const { check: checkRequirements } = require('./services/requirements');
 const { Logger } = require('./services/logger');
 const { Catalog } = require('./services/catalog');
 const { Peers } = require('./services/peers');
+const { Achievements } = require('./services/achievements');
 
 const PROTOCOL = 'blacknight';
 
@@ -25,12 +26,80 @@ if (isDev) app.setPath('userData', `${app.getPath('userData')} (dev)`);
 
 let win = null;
 let tray = null;
-let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, peers, log;
+let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, peers, achievements, log;
 let quitting = false;
 let dataDir;
 
 /* -------------------------------------------------------------------- */
 /* Services                                                              */
+
+/**
+ * Tells the player when something they wishlisted actually comes out.
+ *
+ * The wishlist was a list that never did anything. A catalog refresh is the
+ * moment a status changes, so it is the moment worth speaking up.
+ */
+function announceWishlistReleases(before, after) {
+  try {
+    if (!before?.games?.length) return;
+    const wasReleased = new Set(before.games.filter((g) => g.status === 'released').map((g) => g.id));
+    const entries = library.store.get('entries');
+
+    for (const game of after.games) {
+      if (game.status !== 'released' || wasReleased.has(game.id)) continue;
+      const entry = entries[game.id];
+      if (!entry?.favorite) continue;
+
+      log.info('wishlist', `${game.title} is out`);
+      notify('Out now', `${game.title} is available to install.`, { route: 'store' });
+    }
+  } catch (err) {
+    log?.warn('wishlist', 'Could not check for releases', err);
+  }
+}
+
+/**
+ * Announces anything newly earned. Achievements are evaluated after a session
+ * ends and shortly after startup, both of which are quiet moments.
+ */
+function announceAchievements() {
+  try {
+    for (const earned of achievements.evaluate()) {
+      log.info('achievements', `Earned ${earned.name}`);
+      notify(`Achievement: ${earned.name}`, earned.description, { route: 'profile' });
+      if (win && !win.isDestroyed()) win.webContents.send('achievement', earned);
+    }
+  } catch (err) {
+    log?.warn('achievements', 'Could not evaluate achievements', err);
+  }
+}
+
+/**
+ * Verifies one installed title at a time while nothing is playing.
+ *
+ * Bit-rot is silent until someone hits it mid-session; a slow rolling check
+ * finds it earlier without ever being something anyone waits on.
+ */
+function scheduleBackgroundVerify() {
+  const SIX_HOURS = 6 * 3600 * 1000;
+  const tick = () => {
+    try {
+      const result = library.verifyOldest();
+      if (result.ok && result.result && !result.result.ok) {
+        log.warn('verify', `${result.gameId} failed a background check`, result.result.error);
+        notify('A game needs repairing', `${result.gameId} failed its file check.`, { route: 'games' });
+      }
+    } catch (err) {
+      log?.warn('verify', 'Background verification failed', err);
+    }
+  };
+
+  // First pass well after startup, so it never competes with the boot.
+  const first = setTimeout(tick, 5 * 60 * 1000);
+  const repeat = setInterval(tick, SIX_HOURS);
+  first.unref?.();
+  repeat.unref?.();
+}
 
 /**
  * A desktop notification, but only when the launcher is not already in front
@@ -146,6 +215,7 @@ function bootServices() {
   hardware = new Hardware(app, settings);
   presence = new Presence({ enabled: settings.get('richPresence') !== false });
 
+  achievements = new Achievements(dataDir, library);
   peers = new Peers(settings, log, { library });
   // The library asks before every install whether a machine on this network
   // already has the build.
@@ -156,7 +226,12 @@ function bootServices() {
   // than what the game is actually about.
   library.onSessionChange = (gameId, running) => {
     const game = catalog.games.find((g) => g.id === gameId);
-    if (!running) return presence.clear();
+    if (!running) {
+      presence.clear();
+      // A finished session is exactly when a new achievement becomes true.
+      setTimeout(() => announceAchievements(), 1200);
+      return;
+    }
     presence.setActivity({
       title: game?.title || 'a BlackNight title',
       details: game?.tagline || undefined,
@@ -170,6 +245,10 @@ function bootServices() {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   };
   updates.on('state', forward('updates:state'));
+  // Data usage is recorded from the engine rather than guessed at in the UI.
+  downloader.on('transferred', ({ bytes, source }) => library.recordTransfer(bytes, { source }));
+  downloader.on('reused', ({ bytes }) => library.recordTransfer(bytes, { source: 'reused' }));
+
   downloader.on('progress', forward('downloads:progress'));
   downloader.on('changed', forward('downloads:changed'));
   downloader.on('completed', (item) => {
@@ -388,6 +467,23 @@ function registerIpc() {
   handle('downloads:clear-finished', () => downloader.clearFinished());
 
   /* Shell / system --------------------------------------------------- */
+  /* Channels, rollback and recovery -------------------------------------- */
+  handle('library:channels', (id) => library.channelsFor(id));
+  handle('library:channel', (id) => library.channelOf(id));
+  handle('library:set-channel', (id, channelId) =>
+    library.setChannel(id, channelId, { tier: auth.session()?.user?.tier || 'standard' })
+  );
+  handle('library:rollback-available', (id) => library.rollbackAvailable(id));
+  handle('library:rollback', (id) => library.rollback(id));
+  handle('library:scan', () => library.scanForInstalls());
+  handle('library:adopt', (id) => library.adoptInstall(id));
+  handle('library:data-usage', () => library.dataUsage());
+
+  /* Achievements --------------------------------------------------------- */
+  handle('achievements:list', () => achievements.list());
+  handle('achievements:progress', () => achievements.progress());
+  handle('achievements:evaluate', () => achievements.evaluate());
+
   /* Journal, habits and the year in review ------------------------------ */
   handle('library:journal', (gameId, options) => library.journal(gameId, options || {}));
   handle('library:journal-note', (id, note) => library.setJournalNote(id, note));
@@ -550,6 +646,68 @@ function registerIpc() {
 /* Lifecycle                                                             */
 
 /**
+ * Command line, for scripting and for the studio's own QA.
+ *
+ *   BlackNightLauncher.exe --install eclipse-protocol
+ *   BlackNightLauncher.exe --launch eclipse-protocol
+ *   BlackNightLauncher.exe --list
+ *
+ * Reuses the deep-link routing rather than inventing a second way in, and is
+ * deliberately limited to things that are safe to trigger without a window:
+ * nothing here can buy, uninstall or sign anything out.
+ */
+function parseCli(argv) {
+  const take = (flag) => {
+    const i = argv.indexOf(flag);
+    return i >= 0 ? argv[i + 1] || true : null;
+  };
+
+  if (argv.includes('--list')) return { type: 'list' };
+  const install = take('--install');
+  if (install && install !== true) return { type: 'install', gameId: install };
+  const launch = take('--launch');
+  if (launch && launch !== true) return { type: 'launch', gameId: launch };
+  return null;
+}
+
+/**
+ * Runs a command that does not need the window, and reports whether the
+ * process should simply exit afterwards.
+ */
+function runCli(command) {
+  if (!command) return false;
+
+  if (command.type === 'list') {
+    for (const game of library.list()) {
+      const state = game.installed ? 'installed' : game.owned ? 'owned' : game.status;
+      process.stdout.write(`${game.id.padEnd(20)} ${state.padEnd(14)} ${game.title}\n`);
+    }
+    return true;
+  }
+
+  if (command.type === 'install') {
+    const result = library.install(command.gameId);
+    process.stdout.write(
+      result.ok
+        ? `queued ${command.gameId}\n`
+        : `could not install ${command.gameId}: ${result.error}\n`
+    );
+    // The download needs the process to stay alive, so the window still opens.
+    return false;
+  }
+
+  if (command.type === 'launch') {
+    const result = library.launch(command.gameId);
+    process.stdout.write(
+      result.ok ? `launched ${command.gameId}\n` : `could not launch ${command.gameId}: ${result.error}\n`
+    );
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Deep links: blacknight://game/eclipse-protocol, blacknight://store, ...
  *
  * Lets the studio site and a Discord message open straight into the launcher
@@ -626,16 +784,30 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     bootServices();
+
+    // A command that finishes on its own never needs a window.
+    const command = parseCli(process.argv.slice(1));
+    if (runCli(command)) {
+      app.quit();
+      return;
+    }
+
     registerIpc();
     registerProtocol();
     createWindow();
     updates.start();
     catalogStore.refresh().then((result) => {
       if (!result.ok) return;
+      const previous = catalog;
       catalog = catalogStore.data;
       library.catalog = catalog;
+      announceWishlistReleases(previous, catalog);
       if (win && !win.isDestroyed()) win.webContents.send('catalog:changed', catalog);
     });
+
+    scheduleBackgroundVerify();
+    // Achievements are re-checked once the library has settled.
+    setTimeout(() => announceAchievements(), 8000);
 
     // A link that started the launcher waits for the window to be ready.
     const startupLink = deepLinkFromArgv(process.argv);

@@ -282,6 +282,310 @@ class Library {
     } catch { /* manifest is a nicety, not a requirement */ }
   }
 
+  /* --- Finding installs the launcher has forgotten ---------------------- */
+
+  /**
+   * Looks through the library folders for builds with no library entry.
+   *
+   * Every install writes a manifest, and until now nothing read it except
+   * verify(). Reinstalling the launcher, restoring a backup or moving a drive
+   * all leave perfectly good builds on disk that the launcher would otherwise
+   * offer to download again.
+   */
+  scanForInstalls() {
+    const entries = this.store.get('entries');
+    const found = [];
+
+    for (const folder of this.libraryFolders()) {
+      let children = [];
+      try {
+        children = fs.readdirSync(folder, { withFileTypes: true }).filter((d) => d.isDirectory());
+      } catch {
+        continue; // a folder that has gone away is not an error
+      }
+
+      for (const dir of children) {
+        const gameId = dir.name;
+        // Already tracked as installed: nothing to recover.
+        if (entries[gameId]?.status === 'installed') continue;
+        if (!this.catalog.games.some((g) => g.id === gameId)) continue;
+
+        const base = path.join(folder, gameId);
+        try {
+          const manifestPath = path.join(base, 'blacknight.manifest.json');
+          const pak = path.join(base, gameId + '.pak');
+          if (!fs.existsSync(manifestPath) || !fs.existsSync(pak)) continue;
+
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const size = fs.statSync(pak).size;
+          if (manifest.sizeBytes && size < manifest.sizeBytes) continue; // a partial download
+
+          found.push({
+            gameId,
+            title: manifest.title || gameId,
+            version: manifest.version || null,
+            path: base,
+            sizeBytes: size,
+            hasChecksum: !!manifest.sha256
+          });
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    return found;
+  }
+
+  /**
+   * Adopts a build found on disk.
+   *
+   * Verified first when the manifest carries a digest - claiming an install is
+   * good on the strength of a filename would be worse than not finding it.
+   */
+  adoptInstall(gameId, { verify = true } = {}) {
+    const candidate = this.scanForInstalls().find((f) => f.gameId === gameId);
+    if (!candidate) return { ok: false, error: 'Nothing to adopt for that title.' };
+
+    if (verify && candidate.hasChecksum) {
+      const manifest = JSON.parse(fs.readFileSync(path.join(candidate.path, 'blacknight.manifest.json'), 'utf8'));
+      const { Downloader } = require('./downloader');
+      if (Downloader.hashFile(path.join(candidate.path, gameId + '.pak')) !== manifest.sha256) {
+        return { ok: false, error: 'Those files did not match their checksum.' };
+      }
+    }
+
+    const entry = this._entry(gameId);
+    entry.owned = true;
+    entry.status = 'installed';
+    entry.version = candidate.version;
+    entry.path = candidate.path;
+    entry.installedAt = entry.installedAt || Date.now();
+    this.store.save();
+    return { ok: true, adopted: candidate, library: this.list() };
+  }
+
+  /* --- Background verification ------------------------------------------ */
+
+  /**
+   * Verifies one installed title, oldest check first.
+   *
+   * Bit-rot on a multi-gigabyte file is silent until someone hits it mid
+   * session. Checking one title at a time, only while nothing is playing,
+   * finds it earlier without ever being something the player waits on.
+   */
+  verifyOldest() {
+    if (this.sessions.size) return { ok: false, reason: 'playing' };
+    if (this.settings.get('backgroundVerify') === false) return { ok: false, reason: 'off' };
+
+    const entries = this.store.get('entries');
+    const due = Object.values(entries)
+      .filter((e) => e.status === 'installed')
+      .sort((a, b) => (a.verifiedAt || 0) - (b.verifiedAt || 0))[0];
+    if (!due) return { ok: false, reason: 'nothing-installed' };
+
+    // A week between checks is often enough to catch rot, rarely enough to
+    // stay invisible.
+    const WEEK = 7 * 86400000;
+    if (due.verifiedAt && Date.now() - due.verifiedAt < WEEK) return { ok: false, reason: 'not-due' };
+
+    const result = this.verify(due.gameId);
+    due.verifiedAt = Date.now();
+    this.store.save();
+    return { ok: true, gameId: due.gameId, result };
+  }
+
+  /* --- Data usage -------------------------------------------------------- */
+
+  _usage() {
+    if (!this._usageStore) this._usageStore = new Store(this.dir, 'usage', { months: {} });
+    return this._usageStore;
+  }
+
+  /** Records transferred bytes against the current month. */
+  recordTransfer(bytes, { source = 'origin' } = {}) {
+    if (!bytes || bytes <= 0) return;
+    const store = this._usage();
+    const months = store.get('months');
+    const key = new Date().toISOString().slice(0, 7);
+    const month = months[key] || { origin: 0, peer: 0, reused: 0 };
+    month[source] = (month[source] || 0) + bytes;
+    months[key] = month;
+    store.set('months', months);
+  }
+
+  /**
+   * What has actually crossed the connection, by month.
+   *
+   * The launcher throttles, schedules and yields bandwidth but never showed a
+   * number - which is the one thing someone on a metered line wants.
+   */
+  dataUsage({ months = 6 } = {}) {
+    const all = this._usage().get('months');
+    return Object.keys(all)
+      .sort()
+      .reverse()
+      .slice(0, months)
+      .map((key) => ({ month: key, ...all[key], total: (all[key].origin || 0) + (all[key].peer || 0) }));
+  }
+
+  /* --- Channels --------------------------------------------------------- */
+
+  /**
+   * Which build of a title this machine should be on.
+   *
+   * BlackNight+ sells guaranteed playtest entry, so the launcher has to have
+   * somewhere to put a playtest build. A catalog entry may carry `channels`,
+   * each with its own version, size and digest; `stable` is what everyone gets
+   * unless they have opted a title into something else and are entitled to it.
+   */
+  channelsFor(gameId) {
+    const game = this.catalog.games.find((g) => g.id === gameId);
+    if (!game) return [];
+
+    const stable = {
+      id: 'stable',
+      label: 'Stable',
+      version: game.version || '1.0.0',
+      sizeBytes: game.sizeBytes,
+      sha256: game.sha256 || null,
+      downloadUrl: game.downloadUrl || null,
+      requiresPlus: false
+    };
+
+    const extra = (game.channels || []).map((c) => ({
+      id: c.id,
+      label: c.label || c.id,
+      version: c.version || stable.version,
+      sizeBytes: c.sizeBytes || game.sizeBytes,
+      sha256: c.sha256 || null,
+      downloadUrl: c.downloadUrl || null,
+      requiresPlus: c.requiresPlus !== false,
+      notes: c.notes || null
+    }));
+
+    return [stable, ...extra];
+  }
+
+  /** The channel a title is set to, falling back to stable. */
+  channelOf(gameId) {
+    const channels = this.channelsFor(gameId);
+    const wanted = this.store.get('entries')[gameId]?.channel || 'stable';
+    return channels.find((c) => c.id === wanted) || channels[0] || null;
+  }
+
+  /**
+   * Moves a title onto another channel.
+   *
+   * Entitlement is checked here rather than in the renderer, because a paid
+   * perk enforced only in the UI is not enforced at all.
+   */
+  setChannel(gameId, channelId, { tier = 'standard' } = {}) {
+    const channel = this.channelsFor(gameId).find((c) => c.id === channelId);
+    if (!channel) return { ok: false, error: 'No such channel.' };
+    if (channel.requiresPlus && tier !== 'plus') {
+      return { ok: false, error: 'That channel is reserved for BlackNight+ members.', requiresPlus: true };
+    }
+
+    const entry = this._entry(gameId);
+    const previous = entry.channel || 'stable';
+    entry.channel = channelId;
+    this.store.save();
+
+    // Switching channels means the installed build is now the wrong one.
+    const needsSwap = entry.status === 'installed' && entry.version !== channel.version;
+    return { ok: true, channel, changed: previous !== channelId, needsSwap, library: this.list() };
+  }
+
+  /* --- Rollback ---------------------------------------------------------- */
+
+  /** Where the build being replaced waits, in case the new one is worse. */
+  rollbackRoot(gameId) {
+    return path.join(this.dir, 'rollback', gameId);
+  }
+
+  /**
+   * Sets the current build aside before an update overwrites it.
+   *
+   * A patch that breaks a game is otherwise a full re-download of the previous
+   * version, assuming it is even still published. Keeping one version back
+   * turns that into a thirty-second revert.
+   */
+  stashForRollback(gameId) {
+    const entry = this.store.get('entries')[gameId];
+    if (!entry || !entry.path || this.settings.get('keepRollback') === false) {
+      return { ok: false, reason: 'off' };
+    }
+
+    try {
+      const pak = path.join(entry.path, gameId + '.pak');
+      const manifest = path.join(entry.path, 'blacknight.manifest.json');
+      if (!fs.existsSync(pak) || !fs.existsSync(manifest)) return { ok: false, reason: 'nothing-to-keep' };
+
+      const target = this.rollbackRoot(gameId);
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.mkdirSync(target, { recursive: true });
+      fs.copyFileSync(pak, path.join(target, gameId + '.pak'));
+      fs.copyFileSync(manifest, path.join(target, 'blacknight.manifest.json'));
+
+      return { ok: true, version: entry.version };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  /** The build available to roll back to, if any. */
+  rollbackAvailable(gameId) {
+    try {
+      const manifestPath = path.join(this.rollbackRoot(gameId), 'blacknight.manifest.json');
+      if (!fs.existsSync(manifestPath)) return null;
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      // Nothing to offer if it is what is already installed.
+      if (this.store.get('entries')[gameId]?.version === manifest.version) return null;
+      return { version: manifest.version, sizeBytes: manifest.sizeBytes, at: manifest.installedAt || null };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Puts the previous build back, checking it before trusting it. */
+  rollback(gameId) {
+    const entry = this.store.get('entries')[gameId];
+    if (!entry || !entry.path) return { ok: false, error: 'That title is not installed.' };
+    if (this.sessions.has(gameId)) return { ok: false, error: 'Close the game before rolling back.' };
+
+    const root = this.rollbackRoot(gameId);
+    const pak = path.join(root, gameId + '.pak');
+    const manifestPath = path.join(root, 'blacknight.manifest.json');
+    if (!fs.existsSync(pak) || !fs.existsSync(manifestPath)) return { ok: false, error: 'No previous build kept.' };
+
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      const { Downloader } = require('./downloader');
+      if (manifest.sha256 && Downloader.hashFile(pak) !== manifest.sha256) {
+        fs.rmSync(root, { recursive: true, force: true });
+        return { ok: false, error: 'The kept build is corrupt and has been discarded.' };
+      }
+
+      // Read the kept build into memory *before* stashing the current one:
+      // stashForRollback writes into this very directory, so reading after it
+      // would copy the build being replaced straight back over itself.
+      const keptPayload = fs.readFileSync(pak);
+      const keptManifest = fs.readFileSync(manifestPath);
+
+      // Swap, keeping the build being replaced so the revert is reversible.
+      const current = this.stashForRollback(gameId);
+      fs.writeFileSync(path.join(entry.path, gameId + '.pak'), keptPayload);
+      fs.writeFileSync(path.join(entry.path, 'blacknight.manifest.json'), keptManifest);
+
+      entry.version = manifest.version;
+      this.store.save();
+      return { ok: true, version: manifest.version, canRedo: current.ok, library: this.list() };
+    } catch (err) {
+      return { ok: false, error: 'Could not roll back: ' + err.message };
+    }
+  }
+
   /* --- Keeping a verified payload -------------------------------------- */
 
   /** Where an uninstalled-but-kept build waits for its reinstall. */
@@ -835,6 +1139,9 @@ class Library {
     for (const item of pending) {
       const entry = this.store.get('entries')[item.gameId];
       const folder = entry?.path ? path.dirname(entry.path) : null;
+      // Keep the build about to be replaced, so a bad patch is a revert rather
+      // than another full download.
+      this.stashForRollback(item.gameId);
       const result = this.install(item.gameId, { folder, kind: 'update' });
       if (result.ok) started.push(item.gameId);
     }

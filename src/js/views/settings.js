@@ -148,6 +148,16 @@
           })()
         ),
         row(
+          'Achievements',
+          'Earned from how you use the launcher.',
+          (() => {
+            const b = el('button', { class: 'btn btn-sm btn-ghost' });
+            b.innerHTML = `${icon('award')} View`;
+            b.addEventListener('click', () => BN.views.achievements.open());
+            return b;
+          })()
+        ),
+        row(
           'Your year in the dark',
           'A poster generated from this year of play.',
           (() => {
@@ -283,8 +293,10 @@
         'Both trade a little local work for a lot less downloading.',
         toggle('deltaPatching', 'Patch updates block by block', 'An update transfers only the parts of a build that actually changed.'),
         toggle('keepPakOnUninstall', 'Keep game files after uninstalling', 'Reinstalling then costs a checksum pass instead of the whole download.'),
+        toggle('keepRollback', 'Keep the previous build after an update', 'Lets a bad patch be rolled back in seconds instead of re-downloaded.'),
         lanRow()
       ),
+      group('Data used', 'Counted per month, on this machine only.', usageRows()),
       group(
         'Storage',
         null,
@@ -297,6 +309,11 @@
             b.addEventListener('click', () => BN.app.go('profile'));
             return b;
           })()
+        ),
+        toggle(
+          'backgroundVerify',
+          'Check installed files in the background',
+          'One title at a time while nothing is playing, so corruption is found before you hit it.'
         ),
         row(
           'Free up space',
@@ -431,6 +448,55 @@
 
     paint([]);
     BN.api.library.folders().then(paint);
+    return node;
+  }
+
+  /**
+   * What has actually crossed the connection, by month.
+   *
+   * The launcher throttles, schedules and yields bandwidth but never showed a
+   * number - which is the one thing someone on a metered line wants. Blocks
+   * reused from a previous build are shown separately, because they are the
+   * bytes the delta patcher saved.
+   */
+  function usageRows() {
+    const node = el('div', { class: 'set-row stack' });
+
+    const paint = (months) => {
+      node.innerHTML = '';
+      if (!months.length) {
+        node.append(el('div', { class: 'field-hint', text: 'Nothing downloaded yet.' }));
+        return;
+      }
+
+      const peak = Math.max(...months.map((m) => (m.origin || 0) + (m.peer || 0) + (m.reused || 0)), 1);
+      const list = el('div', { class: 'col', style: { width: '100%' } });
+
+      for (const month of months) {
+        const row = el('div', { class: 'usage-row' });
+        const pct = (v) => ((v || 0) / peak) * 100;
+        row.innerHTML = `
+          <span class="usage-month">${esc(month.month)}</span>
+          <span class="usage-bar">
+            <i class="origin" style="width:${pct(month.origin)}%"></i>
+            <i class="peer" style="width:${pct(month.peer)}%"></i>
+            <i class="reused" style="width:${pct(month.reused)}%"></i>
+          </span>
+          <span class="usage-total">${esc(bytes(month.total || 0))}</span>`;
+        list.append(row);
+      }
+
+      const key = el('div', { class: 'usage-key' });
+      key.innerHTML = `
+        <span><i style="background:var(--accent)"></i> Downloaded</span>
+        <span><i style="background:var(--ok)"></i> From a peer</span>
+        <span><i style="background:var(--text-faint)"></i> Reused locally</span>`;
+
+      node.append(list, key);
+    };
+
+    paint([]);
+    BN.api.library.dataUsage().then(paint);
     return node;
   }
 

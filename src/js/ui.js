@@ -8,6 +8,26 @@
   const icon = BN.icon;
 
   /* --------------------------------------------------------------------- */
+  /* Announcements                                                          */
+
+  /**
+   * Says something to a screen reader without showing it on screen.
+   *
+   * Download progress, background verification and achievements all happen
+   * without the user doing anything, so they belong in a polite region rather
+   * than a toast that steals focus.
+   */
+  let announceTimer = null;
+  function announce(message) {
+    const host = document.getElementById('announcer');
+    if (!host || !message) return;
+    // Re-setting identical text does not re-announce, so it is cleared first.
+    host.textContent = '';
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(() => { host.textContent = message; }, 60);
+  }
+
+  /* --------------------------------------------------------------------- */
   /* Toasts                                                                 */
 
   const ICONS = { info: 'info', ok: 'checkCircle', warn: 'alert', error: 'xCircle' };
@@ -369,5 +389,5 @@
     else if (openModal) closeModal();
   });
 
-  BN.ui = { toast, modal, closeModal, confirm, commandPalette, closePalette, dropdown, closeDropdown, trapFocus };
+  BN.ui = { toast, modal, closeModal, confirm, commandPalette, closePalette, dropdown, closeDropdown, trapFocus, announce };
 })();

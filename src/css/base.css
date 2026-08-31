@@ -112,6 +112,20 @@ h3.display { font-size: 1.1rem; letter-spacing: 0.1em; }
 .nowrap { white-space: nowrap; }
 .hidden { display: none !important; }
 
+/* Visible only to assistive technology: kept in the accessibility tree but
+   out of the visual layout entirely. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* --- Layout helpers ----------------------------------------------------- */
 
 .row { display: flex; align-items: center; gap: 10px; }

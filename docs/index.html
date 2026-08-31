@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BlackNight Launcher</title>
+<meta name="description" content="The official game launcher for BlackNight Studios.">
+<meta property="og:title" content="BlackNight Launcher">
+<meta property="og:description" content="One launcher for every BlackNight Studios title.">
+<meta property="og:type" content="website">
+<style>
+  /* Same palette as the launcher, so the download page and the app it serves
+     are recognisably one thing. */
+  :root {
+    --bg: #05050a;
+    --surface: #0d0e15;
+    --line: #1e2029;
+    --text: #eef1f7;
+    --dim: #9aa3b5;
+    --faint: #626b7d;
+    --accent: #8fb8ff;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sky {
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 90% 60% at 70% -10%, rgba(143, 184, 255, 0.10), transparent 70%),
+      radial-gradient(ellipse 70% 50% at 20% 10%, rgba(120, 90, 200, 0.07), transparent 70%);
+    pointer-events: none;
+  }
+  main { position: relative; max-width: 760px; margin: 0 auto; padding: 15vh 24px 80px; }
+  .mark { width: 76px; height: 76px; margin-bottom: 28px; }
+  h1 {
+    font-size: clamp(2.4rem, 7vw, 3.8rem);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    margin: 0;
+    line-height: 1.02;
+    background: linear-gradient(160deg, #fff 8%, #98a2b5 42%, #fff 58%, #7c8496 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub { color: var(--faint); letter-spacing: 0.34em; text-transform: uppercase; font-size: 0.72rem; margin-top: 10px; }
+  .lede { color: var(--dim); font-size: 1.06rem; max-width: 52ch; margin: 26px 0 36px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 13px 22px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.92rem;
+    transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+  }
+  .btn:hover { transform: translateY(-1px); border-color: #394052; background: var(--surface); }
+  .btn-primary {
+    background: linear-gradient(160deg, #fff 10%, #c9d2e4 48%, #94a0b8 100%);
+    color: #0a0b10;
+    border-color: transparent;
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: linear-gradient(160deg, #fff 4%, #dbe2f0 50%, #a3aec4 100%); }
+  .note { color: var(--faint); font-size: 0.83rem; margin-top: 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px; margin-top: 64px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: var(--surface); }
+  .card h2 { font-size: 0.76rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); margin: 0 0 8px; }
+  .card p { margin: 0; color: var(--dim); font-size: 0.88rem; }
+  footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--faint); font-size: 0.82rem; }
+  footer a { color: var(--dim); }
+  code { font-family: var(--mono); font-size: 0.85em; color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="sky"></div>
+<main>
+  <svg class="mark" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BlackNight Studios">
+    <defs>
+      <linearGradient id="chrome" x1="0" y1="0" x2="0.6" y2="1">
+        <stop offset="0%" stop-color="#ffffff"/><stop offset="38%" stop-color="#8d96aa"/>
+        <stop offset="52%" stop-color="#ffffff"/><stop offset="100%" stop-color="#9aa2b4"/>
+      </linearGradient>
+      <radialGradient id="body" cx="0.34" cy="0.26" r="0.95">
+        <stop offset="0%" stop-color="#20222c"/><stop offset="100%" stop-color="#030305"/>
+      </radialGradient>
+    </defs>
+    <rect x="18" y="18" width="476" height="476" rx="112" fill="url(#chrome)" opacity=".9"/>
+    <rect x="26" y="26" width="460" height="460" rx="104" fill="url(#body)"/>
+    <circle cx="336" cy="150" r="92" fill="#c8d2e4" opacity=".92"/>
+    <text x="118" y="372" font-family="Arial Black, Arial, sans-serif" font-size="250" font-weight="900" fill="url(#chrome)">B</text>
+  </svg>
+
+  <h1>BlackNight<br>Launcher</h1>
+  <div class="sub">Studios</div>
+
+  <p class="lede">
+    One launcher for every BlackNight Studios title. Your library, your downloads
+    and your progress, wherever the night takes you.
+  </p>
+
+  <div class="row">
+    <!-- Always resolves to the newest published installer, so this page never
+         needs editing when a release goes out. -->
+    <a class="btn btn-primary" href="https://github.com/SourcedCMD/blacknight-launcher/releases/latest">
+      Download for Windows
+    </a>
+    <a class="btn" href="https://github.com/SourcedCMD/blacknight-launcher/releases">All releases</a>
+    <a class="btn" href="https://github.com/SourcedCMD/blacknight-launcher">Source</a>
+  </div>
+
+  <p class="note">
+    Windows 10 or later, 64-bit. A portable build and a Linux AppImage are on the
+    releases page. The installer is not code-signed yet, so Windows SmartScreen
+    will warn on first run &mdash; choose <em>More info</em> then <em>Run anyway</em>.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Will it run?</h2>
+      <p>Reads your actual hardware and tells you where you stand before you download 90 GB.</p>
+    </div>
+    <div class="card">
+      <h2>Out of your way</h2>
+      <p>Downloads yield to a running game, and can be held until the small hours.</p>
+    </div>
+    <div class="card">
+      <h2>Patches, not payloads</h2>
+      <p>Updates transfer only the blocks that changed, and can be shared across your network.</p>
+    </div>
+    <div class="card">
+      <h2>Yours</h2>
+      <p>Your library becomes the sky behind it, drawn from what you actually play.</p>
+    </div>
+  </div>
+
+  <footer>
+    &copy; 2026 BlackNight Studios &middot;
+    <a href="https://github.com/SourcedCMD/blacknight-launcher/issues">Report a problem</a> &middot;
+    <a href="https://github.com/SourcedCMD/blacknight-launcher/blob/main/CHANGELOG.md">Changelog</a>
+  </footer>
+</main>
+</body>
+</html>

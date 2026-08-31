@@ -427,7 +427,15 @@
         BN.ui.closeModal();
       });
 
-      manage.append(verify, options, remove);
+      const channel = el('button', { class: 'btn btn-ghost btn-sm btn-block' });
+      channel.innerHTML = `${icon('layers')} Build channel`;
+      channel.addEventListener('click', () => BN.views.achievements.chooseChannel(game.id));
+
+      const revert = el('button', { class: 'btn btn-ghost btn-sm btn-block' });
+      revert.innerHTML = `${icon('refresh')} Roll back an update`;
+      revert.addEventListener('click', () => BN.views.achievements.offerRollback(game.id));
+
+      manage.append(verify, options, channel, revert, remove);
     }
 
     paintFitVerdict(body, game.id);
@@ -651,11 +659,13 @@
   /* --------------------------------------------------------------------- */
   /* "Will it run?"                                                         */
 
+  // Colour alone cannot carry the verdict: red and green are the same shape to
+  // a colour-blind player, so each state gets a distinct glyph too.
   const FIT_COPY = {
-    recommended: ['fit-good', 'Your PC clears the recommended spec'],
-    minimum: ['fit-ok', 'Your PC clears the minimum spec'],
-    below: ['fit-bad', 'Your PC is below the minimum spec'],
-    unknown: ['fit-unknown', 'Not enough is known about this machine to say']
+    recommended: ['fit-good', 'Your PC clears the recommended spec', 'checkCircle'],
+    minimum: ['fit-ok', 'Your PC clears the minimum spec', 'check'],
+    below: ['fit-bad', 'Your PC is below the minimum spec', 'alert'],
+    unknown: ['fit-unknown', 'Not enough is known about this machine to say', 'info']
   };
 
   /**
@@ -677,9 +687,12 @@
     // a useful guard here; bail only if the node was replaced outright.
     if (!node.parentNode) return;
 
-    const [cls, text] = FIT_COPY[result.level] || FIT_COPY.unknown;
+    const [cls, text, glyph] = FIT_COPY[result.level] || FIT_COPY.unknown;
     node.className = `fit ${cls}`;
-    node.innerHTML = `<span class="fit-dot"></span><span class="fit-text">${esc(text)}</span>`;
+    // role=status so the verdict is announced when it resolves, since it
+    // arrives a moment after the sheet opens.
+    node.setAttribute('role', 'status');
+    node.innerHTML = `<span class="fit-glyph">${icon(glyph)}</span><span class="fit-text">${esc(text)}</span>`;
 
     // Name what actually falls short, so "below minimum" is actionable.
     const failing = (result.minimum?.rows || []).filter((r) => r.status === 'below');

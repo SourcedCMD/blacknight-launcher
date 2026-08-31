@@ -681,6 +681,13 @@ kbd {
   background: var(--text-faint);
   box-shadow: 0 0 10px currentColor;
 }
+/* The glyph carries the verdict where colour cannot: a tick, a double tick,
+   a warning triangle and an info mark read differently in greyscale. */
+.fit-glyph { display: flex; flex: none; color: var(--text-faint); }
+.fit-glyph svg { width: 17px; height: 17px; }
+.fit-good .fit-glyph { color: var(--ok); }
+.fit-ok .fit-glyph { color: var(--accent); }
+.fit-bad .fit-glyph { color: var(--danger); }
 .fit-text { color: var(--text-dim); }
 .fit-why {
   font-size: 0.74rem;
@@ -967,3 +974,75 @@ kbd {
   letter-spacing: 0.04em;
 }
 .chamber-body p { color: var(--text-dim); line-height: 1.7; font-size: 0.86rem; max-width: 54ch; }
+
+/* --- Achievements --------------------------------------------------------- */
+
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.ach {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  opacity: 0.55;
+}
+.ach.earned { opacity: 1; border-color: var(--line-strong, var(--line)); }
+.ach-badge {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  filter: grayscale(1);
+}
+.ach.earned .ach-badge { filter: none; }
+.ach-badge svg { width: 100%; height: 100%; display: block; }
+.ach .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ach-name { font-size: 0.86rem; }
+.ach-desc { font-size: 0.75rem; color: var(--text-faint); }
+.ach-when { font-size: 0.7rem; color: var(--accent); margin-top: 2px; }
+.ach-state { flex: none; color: var(--text-faint); }
+.ach.earned .ach-state { color: var(--ok); }
+.ach-state svg { width: 18px; height: 18px; }
+
+/* --- Build channels ------------------------------------------------------- */
+
+.channel-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  cursor: pointer;
+}
+.channel-row.locked { opacity: 0.55; cursor: not-allowed; }
+.channel-row input { accent-color: var(--accent); flex: none; }
+.channel-row .grow { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.channel-name { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; }
+.channel-meta { font-size: 0.73rem; color: var(--text-faint); }
+
+/* --- Data usage ----------------------------------------------------------- */
+
+.usage-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.usage-row:last-child { border-bottom: none; }
+.usage-month { width: 82px; flex: none; color: var(--text-dim); font-family: var(--font-mono); }
+.usage-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-sunk); overflow: hidden; display: flex; }
+.usage-bar i { display: block; height: 100%; }
+.usage-bar .origin { background: var(--accent); }
+.usage-bar .peer { background: var(--ok); }
+.usage-bar .reused { background: var(--text-faint); }
+.usage-total { flex: none; font-family: var(--font-mono); color: var(--text-dim); }
+.usage-key { display: flex; gap: 14px; font-size: 0.72rem; color: var(--text-faint); margin-top: 10px; }
+.usage-key span { display: flex; align-items: center; gap: 5px; }
+.usage-key i { width: 8px; height: 8px; border-radius: 2px; display: block; }

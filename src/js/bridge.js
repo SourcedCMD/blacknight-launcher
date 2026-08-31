@@ -278,6 +278,17 @@
       async removeFolder() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async outdated() { return []; },
       async updateAll() { return { ok: true, started: [], pending: [] }; },
+      async channels(id) {
+        const game = catalog.games.find((g) => g.id === id) || {};
+        return [{ id: 'stable', label: 'Stable', version: game.version || '1.0.0', sizeBytes: game.sizeBytes, requiresPlus: false }];
+      },
+      async channel(id) { return (await this.channels(id))[0]; },
+      async setChannel() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async rollbackAvailable() { return null; },
+      async rollback() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async scan() { return []; },
+      async adopt() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async dataUsage() { return []; },
       async journal() { return []; },
       async setJournalNote() { return { ok: true }; },
       async insights() { return null; },
@@ -416,6 +427,12 @@
     },
 
     // A browser tab has no LAN presence to offer.
+    achievements: {
+      async list() { return []; },
+      async progress() { return { earned: 0, total: 0 }; },
+      async evaluate() { return []; }
+    },
+
     peers: {
       async list() { return []; },
       async status() { return { enabled: false, port: 0, peers: 0 }; },
@@ -468,7 +485,8 @@
       async relaunch() { location.reload(); },
       async quit() {},
       onNavigate: (fn) => { listeners.nav.push(fn); return () => {}; },
-      onDeepLink: () => () => {}
+      onDeepLink: () => () => {},
+      onAchievement: () => () => {}
     }
   };
 

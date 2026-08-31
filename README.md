@@ -51,6 +51,7 @@ electron/            Main process
     catalog.js       Remote slate and news, with the bundled copy as fallback
     chunks.js        Block-level delta patching: manifests, diffs, plans
     peers.js         LAN peer install over multicast discovery
+    achievements.js  Local achievements, earned from play history
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -68,12 +69,14 @@ src/                 Renderer (classic scripts, dependency-ordered in index.html
     diagnostics.js   Catches renderer errors and reports them to the log
     i18n.js          Translation layer; English bundled
     views/journal.js Play journal, session insights, year in review
+    views/achievements.js  Achievements, channels, rollback, recovery
     views/           games, store, plus, downloads, settings, profile
     app.js           Boot sequence, routing, shortcuts, window chrome
 
 scripts/
   dev-server.js      Static server for `npm run web`
   make-icon.js       Packs build/icons/*.png into build/icon.ico
+  check-catalog.js   Validates catalog.json before it can be published
 
 test/
   services.test.js       Store, settings, accounts and install rules
@@ -81,6 +84,7 @@ test/
   scheduling.test.js     Download window, bandwidth yielding, ownership
   diagnostics.test.js    Logging, catalog fallback, checksums, saves, updates
   chunks.test.js         Delta patching, peer tokens, journal, year in review
+  channels.test.js       Channels, rollback, recovery, usage, achievements
 
 build/
   icons/             PNG masters, 16–256px
@@ -241,8 +245,41 @@ launch the launcher can say how long sessions here usually run and where that
 lands on the clock - computed from local history, never uploaded. At the end of
 a year that becomes a generated poster, seeded from the year's own numbers.
 
+**Achievements, earned from the launcher rather than inside a game.** Ten of
+them, each a pure predicate over local history, each with a badge generated from
+its own id. They are never revoked - uninstalling a game does not take one away.
+
+**Data usage by month**, split into what was downloaded, what came from a LAN
+peer, and what was reused locally by the delta patcher. The launcher throttles,
+schedules and yields bandwidth; this is the number that says what any of it
+achieved.
+
 **There is exactly one secret**, which is the correct number for a studio
 launcher.
+
+## Channels, and getting out of a bad patch
+
+**Playtest and beta channels.** BlackNight+ sells guaranteed playtest entry, so
+the launcher has somewhere to put a playtest build. A catalog entry may carry
+`channels`, each with its own version and digest; `stable` is implicit and never
+declared. Entitlement is checked in the main process, because a paid perk
+enforced only in the UI is not enforced at all.
+
+**Update rollback.** The build being replaced is kept, so a patch that breaks a
+game is a thirty-second revert rather than another full download of a version
+that may not even still be published. The rollback is itself reversible, and a
+kept build that has rotted on disk is refused and discarded rather than
+installed.
+
+**Installs the launcher has forgotten.** Every install writes a manifest, and
+nothing used to read it except `verify()`. The library folders are scanned at
+startup for builds with no entry, which recovers a reinstalled launcher, a moved
+drive or a restored backup instead of downloading 90 GB that is already there.
+Anything with a checksum is verified before it is adopted.
+
+**Quiet background verification.** One title at a time, only while nothing is
+playing, at most weekly per title. Bit-rot is silent until someone hits it
+mid-session.
 
 ## Getting a 90 GB game to people
 
@@ -314,10 +351,23 @@ reads. `.github/workflows/ci.yml` runs the tests on every push and pull request.
 Building by hand still works (`npm run dist:win`), but the artefacts then have
 to be attached to the release manually.
 
+The download page in `docs/` is served by GitHub Pages — enable it once under
+**Settings → Pages → Deploy from a branch → main → /docs**. It links to
+`releases/latest`, so it never needs editing when a release goes out.
+
 Because the repository is public, updates need no credentials. A private
 repository would mean shipping a GitHub token inside the app to every user, so
 if it is ever made private the update feed should move to a generic HTTPS
 provider on your own server instead.
+
+## Accessibility
+
+Toasts live in an assertive live region and background events - download
+milestones, achievements, verification results - in a polite one, so a screen
+reader hears what a sighted user sees. Modals trap focus and hand it back.
+Status is never carried by colour alone: the "will it run?" verdict uses a
+distinct glyph per state, so it survives greyscale. Interface scale, reduced
+motion and the animated background are all switchable.
 
 ## Status
 
