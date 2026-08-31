@@ -190,7 +190,9 @@
     menu.append(item('Downloads', 'download', () => go('downloads')));
     menu.append(item('Settings', 'settings', () => go('settings')));
     menu.append(el('div', { class: 'menu-sep' }));
-    menu.append(item('Support', 'external', () => BN.api.app.openExternal('https://blacknightstudios.example/support')));
+    if (BN.util.hasLink('support')) {
+      menu.append(item('Support', 'external', () => BN.api.app.openExternal(BN.util.link('support'))));
+    }
     menu.append(item('Sign out', 'logout', signOut, 'danger'));
     return menu;
   }

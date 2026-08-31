@@ -370,6 +370,16 @@
       onCompleted: (fn) => { listeners.completed.push(fn); return () => {}; }
     },
 
+    // The browser preview has nothing to update, so the panel reports the
+    // same 'unsupported' state a development Electron run would.
+    updates: {
+      async get() { return { status: 'unsupported', version: null, progress: 0, error: null }; },
+      async check() { return { status: 'unsupported', version: null, progress: 0, error: null }; },
+      async download() { return { status: 'unsupported', version: null, progress: 0, error: null }; },
+      async install() { return { ok: false, error: 'Updates are unavailable in the browser preview.' }; },
+      onState: () => () => {}
+    },
+
     app: {
       async info() {
         return {

@@ -10,10 +10,12 @@ const { Store } = require('./store');
  * install actually means.
  */
 class Library {
-  constructor(dir, catalog, downloader, settings) {
+  constructor(dir, catalog, downloader, settings, { allowSimulated = false } = {}) {
     this.catalog = catalog;
     this.downloader = downloader;
     this.settings = settings;
+    // Simulated installs are a development affordance, never a shipped one.
+    this.allowSimulated = allowSimulated;
     this.store = new Store(dir, 'library', { entries: {}, recent: [] });
     this.sessions = new Map(); // gameId -> { pid, startedAt }
 
@@ -92,6 +94,15 @@ class Library {
 
     const entry = this._entry(gameId);
     if (entry.status === 'installed') return { ok: false, error: 'Already installed.' };
+
+    // A catalog entry without a downloadUrl falls back to the simulated
+    // writer, which produces a real file of the right size - useful while
+    // developing, but in a shipped build that is gigabytes of nothing written
+    // to someone's drive. Released builds only install titles that have a
+    // real artifact behind them.
+    if (!game.downloadUrl && !this.allowSimulated) {
+      return { ok: false, error: `${game.title} does not have a downloadable build yet.` };
+    }
 
     const dir = this.installDir();
     try {

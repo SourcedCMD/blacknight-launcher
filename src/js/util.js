@@ -211,8 +211,41 @@
     }
   };
 
+  /**
+   * Every outward-facing URL the launcher can open, in one place.
+   *
+   * Leave a value empty until that page actually exists. Callers use
+   * `hasLink` to decide whether to render the entry at all, so an unset
+   * destination is simply not offered - the launcher never ships a link that
+   * goes nowhere.
+   */
+  const LINKS = {
+    website: '',
+    support: '',
+    careers: '',
+    terms: '',
+    privacy: ''
+  };
+
+  const link = (name) => LINKS[name] || '';
+  const hasLink = (name) => !!LINKS[name];
+
+  BN.links = LINKS;
+
+  /**
+   * Runtime switches for services that are not connected yet.
+   *
+   * `storeLive` gates anything that would take money. While it is false the
+   * launcher still shows what a title costs, but never claims to have sold
+   * one - no library grant, no membership upgrade. Flip it when the account
+   * and payment services are actually live.
+   */
+  BN.config = {
+    storeLive: false
+  };
+
   BN.util = {
-    $, $$, el, esc, frag,
+    $, $$, el, esc, frag, link, hasLink,
     bytes, speed, duration, playtime, money, date, relative, countdown,
     clamp, lerp, sleep, debounce, throttle, rng, hashString, initials, countTo,
     bus

@@ -71,6 +71,14 @@ contextBridge.exposeInMainWorld('blacknight', {
     onCompleted: (handler) => on('downloads:completed', handler)
   },
 
+  updates: {
+    get: () => call('updates:get'),
+    check: () => call('updates:check'),
+    download: () => call('updates:download'),
+    install: () => call('updates:install'),
+    onState: (handler) => on('updates:state', handler)
+  },
+
   app: {
     info: () => call('app:info'),
     chooseDirectory: (current) => call('app:choose-directory', current),

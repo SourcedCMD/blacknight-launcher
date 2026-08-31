@@ -18,7 +18,8 @@ npm run dev
 | Script | What it does |
 | --- | --- |
 | `npm start` | Runs the packaged-style Electron app |
-| `npm run dev` | Same, with `--dev` (opens devtools, verbose logging) |
+| `npm run dev` | Same, with `--dev` (devtools, its own data directory) |
+| `npm test` | Service unit tests, no Electron required |
 | `npm run web` | Static preview at <http://localhost:4173> — no Electron needed |
 | `npm run icon` | Rebuilds `build/icon.ico` from `build/icons/*.png` |
 | `npm run dist:win` | Builds the NSIS installer into `release/` |
@@ -42,6 +43,7 @@ electron/            Main process
     auth.js          Local accounts: scrypt hashing, 30-day sessions
     downloader.js    Download queue with resume; real HTTP or simulated
     library.js       Install records, playtime, process launching
+    updates.js       Launcher self-update over electron-updater
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -60,6 +62,9 @@ src/                 Renderer (classic scripts, dependency-ordered in index.html
 scripts/
   dev-server.js      Static server for `npm run web`
   make-icon.js       Packs build/icons/*.png into build/icon.ico
+
+test/
+  services.test.js   Store, settings, accounts and install rules
 
 build/
   icons/             PNG masters, 16–256px
@@ -89,6 +94,29 @@ a real ranged HTTP transfer; the rest use a paced writer that produces a real
 file of the right size, so the UI, the progress events and the resume logic are
 exercised by the same code path a shipping title would take.
 
+That simulated writer is a development affordance only. A packaged build
+refuses to install a title with no `downloadUrl` rather than write gigabytes of
+nothing to someone's drive — see `allowSimulated` in `library.js`.
+
+**Games never install into a synced folder.** `defaultInstallDir()` in
+`main.js` deliberately avoids Documents: Windows redirects it into OneDrive on
+most machines with Known Folder Move enabled, which would sync every
+multi-gigabyte install to the user's cloud storage. Installs go to
+`%LOCALAPPDATA%` instead.
+
+**Nothing claims to have taken money.** `BN.config.storeLive` gates every paid
+path. While it is false the launcher still shows what a title or membership
+costs, but purchases and sign-ups stop with an explanation instead of granting
+the item. Free titles are unaffected. Flip it when payment services are live.
+
+**Outward-facing URLs live in one place.** `BN.links` in `util.js` holds the
+website, support, careers, terms and privacy addresses. Callers check
+`hasLink()` before rendering, so an unset destination is simply not offered —
+the launcher never ships a link that goes nowhere.
+
+**A dev run cannot corrupt an installed copy.** `--dev` moves `userData` to its
+own directory, so testing never writes over real accounts, library or queue.
+
 **Security posture.** The renderer runs sandboxed with `contextIsolation` on
 and `nodeIntegration` off. The
 preload exposes a fixed set of named channels with no generic `invoke(channel)`
@@ -110,10 +138,35 @@ npm run icon
 `make-icon.js` validates each PNG's dimensions and writes a multi-resolution
 `.ico` with PNG-compressed entries (read natively by Windows Vista and later).
 
+## Updates
+
+The launcher updates itself through `electron-updater`, published to GitHub
+Releases (`build.publish` in `package.json`). Set `owner` and `repo` to the
+real repository before the first release.
+
+Checks run once a few seconds after startup, and again whenever the user
+presses **Check now** under Settings → About. Downloads are explicit rather
+than automatic — a launcher that saturates the connection while a game is
+installing is a launcher people turn off — and the new version is applied on
+the next quit.
+
+To cut a release: bump `version` in `package.json`, run `npm run dist:win`, and
+publish `release/BlackNightLauncher-Setup-<version>.exe` together with
+`latest.yml` and the `.blockmap` to the matching GitHub release tag.
+
 ## Status
 
 The UI, the IPC surface and all six views are complete and driven by working
-services. The catalogue is BlackNight's real slate; no title has shipped a build
-yet, so installs run through the downloader's simulated mode until catalog
-entries gain a `downloadUrl`. Account and code-redemption services are local
-only — there is no remote BlackNight account backend connected in this build.
+services. Still to connect before a public release:
+
+- **The installer is unsigned**, so Windows SmartScreen warns on first run.
+  Removing that needs a code-signing certificate.
+- **No title has shipped a build.** No catalog entry carries a `downloadUrl`,
+  so a packaged launcher currently has nothing it can install.
+- **Accounts are local only.** Credentials live in `%APPDATA%` as scrypt
+  hashes; there is no remote account service, so cloud saves, cross-device
+  libraries and password recovery cannot work yet.
+- **The store and memberships are closed** (`BN.config.storeLive`), and code
+  redemption reports the service as unavailable.
+- **`BN.links` is empty**, so site, support and legal links stay hidden until
+  those pages exist.

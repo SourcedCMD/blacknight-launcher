@@ -405,15 +405,33 @@
   async function checkout(game, edition) {
     const isPre = game.status !== 'released';
 
-    if (edition.usd > 0) {
-      const proceed = await BN.ui.confirm({
-        title: `${isPre ? 'Pre-order' : 'Purchase'} ${game.title}`,
-        message:
-          `${edition.name} - ${money(edition.usd)}. Payment is handled by the BlackNight store service, which is not connected in this build. ` +
-          `Continuing adds the title to your library so you can try the install and download flow.`,
-        confirmLabel: isPre ? 'Pre-order' : 'Add to library'
+    // Nothing that costs money completes while the store is offline. Saying
+    // so plainly beats granting the title and calling it a purchase.
+    if (edition.usd > 0 && !BN.config.storeLive) {
+      BN.sound?.play('error');
+      BN.ui.modal({
+        title: 'The store is not open yet',
+        content:
+          `<p style="color:var(--text-dim);line-height:1.7">` +
+          `<strong>${esc(game.title)} - ${esc(edition.name)}</strong> is listed at ${esc(money(edition.usd))}, but the ` +
+          `BlackNight store is not taking ${isPre ? 'pre-orders' : 'orders'} yet. Nothing has been charged and nothing ` +
+          `has been added to your library.</p>` +
+          `<p style="color:var(--text-dim);line-height:1.7;margin-top:14px">` +
+          `Add it to your wishlist and the launcher will tell you when it goes on sale.</p>`,
+        footer: [
+          { label: 'Close', class: 'btn-ghost', onClick: ({ close }) => close() },
+          {
+            label: game.favorite ? 'Wishlisted' : 'Add to wishlist',
+            class: 'btn-accent',
+            onClick: async ({ close }) => {
+              if (!game.favorite) await BN.state.toggleFavorite(game.id);
+              close();
+              BN.ui.toast('Added to wishlist', `We will let you know when ${game.title} is available.`, { kind: 'ok' });
+            }
+          }
+        ]
       });
-      if (!proceed) return;
+      return;
     }
 
     await BN.state.acquire(game.id);

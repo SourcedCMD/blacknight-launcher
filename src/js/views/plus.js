@@ -151,11 +151,26 @@
       return;
     }
 
+    // Memberships are a recurring charge; until billing exists the launcher
+    // says so rather than quietly marking the account as paid.
+    if (!BN.config.storeLive) {
+      BN.sound?.play('error');
+      BN.ui.modal({
+        title: 'Memberships are not open yet',
+        content:
+          `<p style="color:var(--text-dim);line-height:1.7">` +
+          `<strong>${esc(tier.name)}</strong> is listed at ${esc(money(tier.price))} ${esc(tier.cadence)}, but BlackNight+ ` +
+          `is not accepting sign-ups yet. Nothing has been charged and your account is unchanged.</p>` +
+          `<p style="color:var(--text-dim);line-height:1.7;margin-top:14px">` +
+          `Everything in the Standard column is free and already active on your account.</p>`,
+        footer: [{ label: 'Close', class: 'btn-accent', onClick: ({ close }) => close() }]
+      });
+      return;
+    }
+
     const yes = await BN.ui.confirm({
       title: `Join ${tier.name}`,
-      message:
-        `${money(tier.price)} ${tier.cadence}. Billing runs through the BlackNight store service, which is not connected in this build. ` +
-        `Continuing marks the account as a member so you can see the membership experience.`,
+      message: `${money(tier.price)} ${tier.cadence}, billed to your BlackNight account. Cancel any time.`,
       confirmLabel: 'Start membership'
     });
     if (!yes) return;

@@ -10,22 +10,34 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "test": "node --test",
     "web": "node scripts/dev-server.js",
     "icon": "node scripts/make-icon.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis"
   },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
   "devDependencies": {
-    "electron": "^32.2.7",
+    "electron": "^44.0.0",
     "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.blacknightstudios.launcher",
     "productName": "BlackNight Launcher",
-    "directories": { "output": "release" },
-    "files": ["electron/**/*", "src/**/*", "package.json"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "package.json"
+    ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.ico",
       "artifactName": "BlackNightLauncher-Setup-${version}.${ext}"
     },
@@ -37,6 +49,13 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "uninstallDisplayName": "BlackNight Launcher"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "BLACKNIGHT-STUDIOS",
+        "repo": "game-launcher"
+      }
+    ]
   }
 }

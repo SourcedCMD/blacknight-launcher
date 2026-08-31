@@ -376,25 +376,81 @@
         </dl>
       </div>`;
 
-    const links = el('div', { class: 'row', style: { gap: '8px', justifyContent: 'center', padding: '0 22px 26px' } });
-    for (const [label, url] of [
-      ['Website', 'https://blacknightstudios.example'],
-      ['Support', 'https://blacknightstudios.example/support'],
-      ['Careers', 'https://blacknightstudios.example/careers']
-    ]) {
-      const b = el('button', { class: 'btn btn-sm btn-ghost' });
-      b.innerHTML = `${icon('external')} ${esc(label)}`;
-      b.addEventListener('click', () => BN.api.app.openExternal(url));
-      links.append(b);
+    const entries = [
+      ['Website', 'website'],
+      ['Support', 'support'],
+      ['Careers', 'careers']
+    ].filter(([, key]) => BN.util.hasLink(key));
+
+    if (entries.length) {
+      const links = el('div', { class: 'row', style: { gap: '8px', justifyContent: 'center', padding: '0 22px 26px' } });
+      for (const [label, key] of entries) {
+        const b = el('button', { class: 'btn btn-sm btn-ghost' });
+        b.innerHTML = `${icon('external')} ${esc(label)}`;
+        b.addEventListener('click', () => BN.api.app.openExternal(BN.util.link(key)));
+        links.append(b);
+      }
+      node.append(links);
     }
-    node.append(links);
 
     setTimeout(() => {
       const mark = node.querySelector('#about-mark');
       if (mark) mark.innerHTML = BN.art.logo(108).replace('<svg ', '<svg class="about-mark" ');
     }, 0);
 
-    return [node];
+    return [node, updatesGroup()];
+  }
+
+  /* --- Launcher updates ------------------------------------------------- */
+
+  /** Wording for each state the updater can report. */
+  const UPDATE_COPY = {
+    unsupported: () => ['Updates', 'Automatic updates apply to installed builds only.'],
+    idle: () => ['Up to date', 'The launcher checks for a new version shortly after it starts.'],
+    checking: () => ['Checking...', 'Asking the update server what the latest version is.'],
+    none: () => ['Up to date', 'You are running the newest version.'],
+    available: (st) => [`Version ${st.version} is available`, 'Download it now and it installs the next time you quit.'],
+    downloading: (st) => ['Downloading update', `${Math.round((st.progress || 0) * 100)}% complete.`],
+    ready: (st) => [`Version ${st.version} is ready`, 'Restart the launcher to finish installing.'],
+    error: (st) => ['Could not check for updates', st.error || 'The update server did not respond.']
+  };
+
+  function updatesGroup() {
+    const node = el('div', { class: 'set-group' });
+    node.innerHTML = `<header><h3>Launcher updates</h3></header>`;
+    const row = el('div', { class: 'set-row' });
+    node.append(row);
+
+    const paint = (st) => {
+      const [title, desc] = (UPDATE_COPY[st.status] || UPDATE_COPY.idle)(st);
+      row.innerHTML = `<div class="grow"><div class="label">${esc(title)}</div><div class="desc">${esc(desc)}</div></div>`;
+      const control = el('div', { class: 'control' });
+
+      const button = (label, cls, fn) => {
+        const b = el('button', { class: `btn btn-sm ${cls}` }, label);
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          paint(await fn());
+        });
+        return b;
+      };
+
+      if (st.status === 'available') control.append(button('Download', 'btn-accent', () => BN.api.updates.download()));
+      else if (st.status === 'ready') control.append(button('Restart now', 'btn-accent', async () => {
+        await BN.api.updates.install();
+        return st;
+      }));
+      else if (st.status !== 'unsupported' && st.status !== 'checking' && st.status !== 'downloading') {
+        control.append(button('Check now', 'btn-ghost', () => BN.api.updates.check()));
+      }
+
+      row.append(control);
+    };
+
+    BN.api.updates.get().then(paint);
+    // Progress and background checks arrive without anyone pressing a button.
+    BN.api.updates.onState(paint);
+    return node;
   }
 
   /* --- Dialogs ---------------------------------------------------------- */

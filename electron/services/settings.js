@@ -16,6 +16,9 @@ const DEFAULTS = {
   pauseOnMetered: true,
   autoUpdateGames: true,
   // Launcher behaviour
+  autoCheckUpdates: true,
+  windowBounds: null,
+  windowMaximized: false,
   launchOnStartup: false,
   startMinimized: false,
   minimizeToTray: true,

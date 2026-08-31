@@ -23,6 +23,14 @@
     wire();
   }
 
+  /** Names the legal documents, linking only the ones that have a home. */
+  function legalLine() {
+    const { hasLink, link } = BN.util;
+    const doc = (key, label) =>
+      hasLink(key) ? `<a href="#" data-external="${esc(link(key))}">${label}</a>` : label;
+    return `By continuing you agree to the BlackNight Studios ${doc('terms', 'Terms of Service')} and ${doc('privacy', 'Privacy Policy')}.`;
+  }
+
   const passwordField = (id, placeholder, autocomplete) => `
     <div class="field">
       <label class="field-label" for="${id}">Password</label>
@@ -68,9 +76,7 @@
 
       <p class="auth-foot">
         No account yet? <button type="button" class="link-btn" data-goto="signup">Create one</button><br>
-        By continuing you agree to the BlackNight Studios
-        <a href="#" data-external="https://blacknightstudios.example/terms">Terms of Service</a> and
-        <a href="#" data-external="https://blacknightstudios.example/privacy">Privacy Policy</a>.
+        ${legalLine()}
       </p>
     </form>`;
   }

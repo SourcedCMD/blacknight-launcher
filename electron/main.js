@@ -7,17 +7,60 @@ const { createSettings } = require('./services/settings');
 const { Auth } = require('./services/auth');
 const { Downloader } = require('./services/downloader');
 const { Library } = require('./services/library');
+const { Updates } = require('./services/updates');
 
 const isDev = process.argv.includes('--dev');
 
+// A dev run keeps its own accounts, library and download queue, so testing
+// never writes over the state of an installed copy.
+if (isDev) app.setPath('userData', `${app.getPath('userData')} (dev)`);
+
 let win = null;
 let tray = null;
-let settings, auth, downloader, library, catalog;
+let settings, auth, downloader, library, catalog, updates;
 let quitting = false;
 let dataDir;
 
 /* -------------------------------------------------------------------- */
 /* Services                                                              */
+
+/**
+ * Where games install by default.
+ *
+ * Deliberately not Documents: Windows redirects that into OneDrive on any
+ * machine with Known Folder Move enabled - the default on most Windows 11
+ * installs - which would sync every multi-gigabyte game to the user's cloud
+ * storage and burn through their quota. LOCALAPPDATA is never redirected.
+ */
+function defaultInstallDir() {
+  const base =
+    process.platform === 'win32'
+      ? process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local')
+      : app.getPath('home');
+  return path.join(base, 'BlackNight Studios', 'Games');
+}
+
+/**
+ * Moves the install folder off a cloud-synced path.
+ *
+ * Builds before 1.0.0 defaulted to Documents, which OneDrive usually owns.
+ * Re-pointing the setting is only safe while nothing is installed there - if a
+ * previous version already put games on that path, leave it be and let the
+ * user move them deliberately rather than silently orphaning an install.
+ */
+function migrateInstallDir() {
+  const current = settings.get('installDir');
+  if (!current) return;
+
+  const documents = app.getPath('documents');
+  const synced = current.startsWith(documents) || /[\\/](OneDrive|Dropbox|Google Drive)[\\/]/i.test(current);
+  if (!synced) return;
+
+  const installed = fs.existsSync(current) && fs.readdirSync(current).length > 0;
+  if (installed) return;
+
+  settings.set('installDir', defaultInstallDir());
+}
 
 function bootServices() {
   dataDir = path.join(app.getPath('userData'), 'data');
@@ -26,17 +69,18 @@ function bootServices() {
   catalog = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'catalog.json'), 'utf8'));
 
   settings = createSettings(dataDir);
-  if (!settings.get('installDir')) {
-    settings.set('installDir', path.join(app.getPath('documents'), 'BlackNight Studios', 'Games'));
-  }
+  if (!settings.get('installDir')) settings.set('installDir', defaultInstallDir());
+  migrateInstallDir();
 
   auth = new Auth(dataDir);
   downloader = new Downloader(dataDir, settings);
-  library = new Library(dataDir, catalog, downloader, settings);
+  library = new Library(dataDir, catalog, downloader, settings, { allowSimulated: !app.isPackaged });
+  updates = new Updates({ packaged: app.isPackaged, autoCheck: settings.get('autoCheckUpdates') !== false });
 
   const forward = (channel) => (payload) => {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   };
+  updates.on('state', forward('updates:state'));
   downloader.on('progress', forward('downloads:progress'));
   downloader.on('changed', forward('downloads:changed'));
   downloader.on('completed', (item) => {
@@ -48,12 +92,34 @@ function bootServices() {
 /* -------------------------------------------------------------------- */
 /* Window                                                                */
 
+/**
+ * Last window position, but only if it still lands on a connected display -
+ * otherwise a window saved on a monitor that has since been unplugged would
+ * reopen off-screen.
+ */
+function restoreBounds() {
+  const saved = settings.get('windowBounds');
+  if (!saved || typeof saved.x !== 'number') return null;
+  const visible = screen.getAllDisplays().some((display) => {
+    const a = display.workArea;
+    return (
+      saved.x < a.x + a.width &&
+      saved.x + saved.width > a.x &&
+      saved.y < a.y + a.height &&
+      saved.y + saved.height > a.y
+    );
+  });
+  return visible ? saved : null;
+}
+
 function createWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  const saved = restoreBounds();
 
   win = new BrowserWindow({
-    width: Math.min(1440, Math.round(sw * 0.86)),
-    height: Math.min(900, Math.round(sh * 0.88)),
+    width: saved?.width || Math.min(1440, Math.round(sw * 0.86)),
+    height: saved?.height || Math.min(900, Math.round(sh * 0.88)),
+    ...(saved ? { x: saved.x, y: saved.y } : {}),
     minWidth: 1024,
     minHeight: 680,
     show: false,
@@ -73,10 +139,26 @@ function createWindow() {
   win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
 
   win.once('ready-to-show', () => {
+    if (settings.get('windowMaximized')) win.maximize();
     if (settings.get('startMinimized')) win.minimize();
     win.show();
     if (isDev) win.webContents.openDevTools({ mode: 'detach' });
   });
+
+  // Only the restored geometry is worth saving - storing a maximised or
+  // minimised frame would reopen the window at screen size with no way back.
+  let saveTimer = null;
+  const rememberBounds = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!win || win.isDestroyed()) return;
+      settings.set('windowMaximized', win.isMaximized());
+      if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {
+        settings.set('windowBounds', win.getNormalBounds());
+      }
+    }, 400);
+  };
+  for (const evt of ['resize', 'move', 'maximize', 'unmaximize']) win.on(evt, rememberBounds);
 
   const pushState = () =>
     win.webContents.send('window:state', {
@@ -90,6 +172,13 @@ function createWindow() {
   }
 
   win.on('close', (event) => {
+    clearTimeout(saveTimer);
+    if (!win.isDestroyed()) {
+      settings.set('windowMaximized', win.isMaximized());
+      if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {
+        settings.set('windowBounds', win.getNormalBounds());
+      }
+    }
     if (quitting) return;
     if (settings.get('minimizeToTray') && settings.get('closeAction') === 'tray' && tray) {
       event.preventDefault();
@@ -164,7 +253,7 @@ function registerIpc() {
   handle('settings:set', (patch) => settings.set(patch));
   handle('settings:reset', () => {
     const data = settings.reset();
-    settings.set('installDir', path.join(app.getPath('documents'), 'BlackNight Studios', 'Games'));
+    settings.set('installDir', defaultInstallDir());
     return data;
   });
 
@@ -190,6 +279,12 @@ function registerIpc() {
   handle('downloads:clear-finished', () => downloader.clearFinished());
 
   /* Shell / system --------------------------------------------------- */
+  /* Launcher updates ------------------------------------------------- */
+  handle('updates:get', () => updates.get());
+  handle('updates:check', () => updates.check());
+  handle('updates:download', () => updates.download());
+  handle('updates:install', () => updates.install());
+
   handle('app:info', () => ({
     version: app.getVersion(),
     electron: process.versions.electron,
@@ -204,7 +299,7 @@ function registerIpc() {
   handle('app:choose-directory', async (current) => {
     const result = await dialog.showOpenDialog(win, {
       title: 'Choose install location',
-      defaultPath: current || app.getPath('documents'),
+      defaultPath: current || defaultInstallDir(),
       properties: ['openDirectory', 'createDirectory']
     });
     return result.canceled ? null : result.filePaths[0];
@@ -277,6 +372,7 @@ if (!app.requestSingleInstanceLock()) {
     bootServices();
     registerIpc();
     createWindow();
+    updates.start();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
