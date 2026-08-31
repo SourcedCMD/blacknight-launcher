@@ -22,9 +22,12 @@
     "web": "node scripts/dev-server.js",
     "icon": "node scripts/make-icon.js",
     "check:catalog": "node scripts/check-catalog.js",
+    "sync": "node scripts/sync.js",
+    "release": "node scripts/release.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "prepare": "node scripts/setup-hooks.js"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"

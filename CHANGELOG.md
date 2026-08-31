@@ -22,6 +22,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - A command line (`--install`, `--launch`, `--list`).
 - Portable Windows build and a Linux AppImage.
 - Screen-reader announcements and non-colour status indicators.
+- `npm run sync` and `npm run release`, which validate before they publish, and
+  a pre-push hook so a plain `git push` cannot ship a failing build either.
 
 ## [1.0.0]
 

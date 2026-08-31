@@ -339,11 +339,22 @@ than automatic — a launcher that saturates the connection while a game is
 installing is a launcher people turn off — and the new version is applied on
 the next quit.
 
-To cut a release, bump `version` in `package.json` and push a matching tag:
+Two commands do everything:
 
 ```bash
-git tag v1.0.1 && git push origin v1.0.1
+npm run sync                 # validate, commit, integrate the remote, push
+npm run release -- patch     # bump, roll the changelog, tag, push
 ```
+
+`sync` refuses rather than pushes when anything is wrong: a credential-shaped
+string in the diff, a file that will not parse, a failing test, an invalid
+catalog. It merges rather than rebases, so a README edited on github.com
+survives. `release` additionally refuses from a dirty tree, a branch other than
+main, or a branch out of step with the remote, then pushes the tag that starts
+the release workflow. Both take `--dry-run`.
+
+A `pre-push` hook runs the same tests, so even a plain `git push` cannot ship a
+failing build. `npm install` points git at it; `git push --no-verify` overrides.
 
 `.github/workflows/release.yml` then runs the tests, rebuilds the icon from its
 PNG masters so a stale `.ico` cannot ship, builds the installer and publishes
