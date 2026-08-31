@@ -79,6 +79,10 @@ scripts/
   dev-server.js      Static server for `npm run web`
   make-icon.js       Packs build/icons/*.png into build/icon.ico
   check-catalog.js   Validates catalog.json before it can be published
+  sync.js            Validate, commit, integrate the remote, push
+  release.js         Bump, roll the changelog, tag, push
+  release-notes.js   Extracts a version's CHANGELOG section for the release
+  doctor.js          Prints a diagnostic report for a bug report
 
 test/
   services.test.js       Store, settings, accounts and install rules
@@ -355,6 +359,19 @@ the release workflow. Both take `--dry-run`.
 
 A `pre-push` hook runs the same tests, so even a plain `git push` cannot ship a
 failing build. `npm install` points git at it; `git push --no-verify` overrides.
+
+`npm run doctor` prints versions, paths, disk space, library state and the last
+errors from the log — enough to act on a report without three round trips. It
+also warns if the install folder has ended up somewhere cloud-synced.
+
+Signing is wired but dormant: set the `WINDOWS_CERT_BASE64` and
+`WINDOWS_CERT_PASSWORD` repository secrets and the release workflow produces a
+signed build. Without them it still publishes, just unsigned, so a missing
+certificate never blocks a release.
+
+Crash reports are off by default and inert until `crashReportUrl` is set. Both
+have to be true before anything leaves the machine, and what goes is the error,
+the version and the platform — never logs, paths or account details.
 
 `.github/workflows/release.yml` then runs the tests, rebuilds the icon from its
 PNG masters so a stale `.ico` cannot ship, builds the installer and publishes

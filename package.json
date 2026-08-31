@@ -22,6 +22,7 @@
     "web": "node scripts/dev-server.js",
     "icon": "node scripts/make-icon.js",
     "check:catalog": "node scripts/check-catalog.js",
+    "doctor": "node scripts/doctor.js",
     "sync": "node scripts/sync.js",
     "release": "node scripts/release.js",
     "dist": "electron-builder",

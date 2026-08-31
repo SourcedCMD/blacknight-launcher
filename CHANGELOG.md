@@ -24,6 +24,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Screen-reader announcements and non-colour status indicators.
 - `npm run sync` and `npm run release`, which validate before they publish, and
   a pre-push hook so a plain `git push` cannot ship a failing build either.
+- `npm run doctor`, which prints everything a bug report needs in one paste.
+- A beta channel for the launcher itself, off by default.
+- Opt-in crash reporting, inert until an endpoint is configured.
+- SECURITY.md, CODEOWNERS, and GitHub Actions pinned to commit SHAs.
+- Release notes taken from this file and put on the GitHub release.
+- Code signing wired into the release workflow, active once the certificate
+  secrets are set.
 
 ## [1.0.0]
 

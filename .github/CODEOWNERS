@@ -1,0 +1,11 @@
+# Every change requests a review from the studio by default.
+# Once branch protection requires review, this is what routes it.
+*                       @SourcedCMD
+
+# The parts where a mistake is expensive: anything touching the IPC surface,
+# the download engine, accounts, or what gets published.
+/electron/preload.js    @SourcedCMD
+/electron/main.js       @SourcedCMD
+/electron/services/     @SourcedCMD
+/.github/workflows/     @SourcedCMD
+/package.json           @SourcedCMD

@@ -31,6 +31,7 @@ const DEFAULTS = {
   downloadWindowEnd: 7,
   // Launcher behaviour
   autoCheckUpdates: true,
+  betaChannel: false,
   windowBounds: null,
   windowMaximized: false,
   launchOnStartup: false,
@@ -45,6 +46,10 @@ const DEFAULTS = {
   // Whether diagnostic logs may include machine details. Nothing is uploaded
   // anywhere; this only controls what the local log file records.
   diagnosticLogs: true,
+  // Off, and inert until an endpoint is set. Both have to be true before
+  // anything leaves the machine.
+  sendCrashReports: false,
+  crashReportUrl: '',
   backupSaves: true,
   saveBackupsKept: 5,
   // Interface

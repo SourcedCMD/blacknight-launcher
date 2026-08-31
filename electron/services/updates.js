@@ -15,9 +15,10 @@ const { EventEmitter } = require('events');
  * turn off. `install()` quits and relaunches into the new version.
  */
 class Updates extends EventEmitter {
-  constructor({ packaged, autoCheck = true }) {
+  constructor({ packaged, autoCheck = true, betaChannel = false }) {
     super();
     this.supported = !!packaged;
+    this.betaChannel = !!betaChannel;
     this.state = { status: this.supported ? 'idle' : 'unsupported', version: null, progress: 0, error: null };
     this.autoCheck = autoCheck;
     this.updater = null;
@@ -30,6 +31,11 @@ class Updates extends EventEmitter {
     this.updater = autoUpdater;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
+
+    // Opting in takes prereleases as well as stable, so an update can be tried
+    // on real machines before everyone gets it. Off by default: nobody should
+    // be moved onto a beta build without asking for it.
+    autoUpdater.allowPrerelease = this.betaChannel;
 
     autoUpdater.on('checking-for-update', () => this._set({ status: 'checking', error: null }));
     autoUpdater.on('update-available', (info) => this._set({ status: 'available', version: info?.version || null }));

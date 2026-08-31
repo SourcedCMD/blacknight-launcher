@@ -100,6 +100,54 @@ class Logger {
     this.includeSystemInfo = !!on;
   }
 
+  /**
+   * Sends a crash somewhere you can actually see it.
+   *
+   * Local logs only help when someone opens an issue and attaches one, which
+   * most people never do. This is opt-in and off by default, and does nothing
+   * at all until an endpoint is configured - so it can never quietly start
+   * sending anything.
+   *
+   * What goes: the error, the launcher version, and the platform. What never
+   * goes: the log file, paths, account details, or anything from the library.
+   */
+  report(error, { endpoint, enabled, version, extra = {} } = {}) {
+    if (!enabled || !endpoint) return Promise.resolve({ ok: false, reason: !endpoint ? 'unconfigured' : 'off' });
+
+    const body = JSON.stringify({
+      version,
+      platform: process.platform,
+      arch: process.arch,
+      electron: process.versions.electron,
+      at: new Date().toISOString(),
+      message: String(error?.message || error || 'unknown'),
+      // Trimmed: a stack is useful, an entire heap dump is not.
+      stack: String(error?.stack || '').split('\n').slice(0, 30).join('\n'),
+      ...extra
+    });
+
+    return new Promise((resolve) => {
+      try {
+        const url = new URL(endpoint);
+        const client = url.protocol === 'http:' ? require('http') : require('https');
+        const req = client.request(
+          url,
+          { method: 'POST', timeout: 5000, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+          (res) => {
+            res.resume();
+            resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode });
+          }
+        );
+        // A crash reporter that throws while reporting a crash helps nobody.
+        req.on('timeout', () => req.destroy());
+        req.on('error', () => resolve({ ok: false, reason: 'unreachable' }));
+        req.end(body);
+      } catch {
+        resolve({ ok: false, reason: 'bad-endpoint' });
+      }
+    });
+  }
+
   /** Where the Settings panel sends the user. */
   location() {
     return { dir: this.dir, file: this.file };

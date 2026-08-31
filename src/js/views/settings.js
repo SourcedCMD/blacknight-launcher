@@ -168,6 +168,15 @@
           })()
         )
       ),
+      group(
+        'Launcher updates',
+        'Applies to the launcher itself, not to games.',
+        toggle(
+          'betaChannel',
+          'Take beta builds of the launcher',
+          'Prerelease versions arrive first, so problems are found before everyone sees them. Restart to apply.'
+        )
+      ),
       group('Setup', null, replayOnboardingRow())
     ];
   }
@@ -608,6 +617,48 @@
   }
 
   /**
+   * Crash reporting, which says plainly when it cannot do anything.
+   *
+   * Two things have to be true before anything leaves the machine: the switch
+   * is on, and an endpoint is configured. With no endpoint the switch is
+   * disabled and the row explains why, rather than offering a control that
+   * silently does nothing.
+   */
+  function crashReportRow() {
+    const settings = BN.state.data.settings;
+    const configured = !!settings.crashReportUrl;
+    const enabled = configured && settings.sendCrashReports === true;
+
+    const node = el('div', { class: 'set-row' });
+    node.innerHTML = `
+      <div class="grow">
+        <div class="label">Send crash reports</div>
+        <div class="desc">${
+          configured
+            ? 'Sends the error and your launcher version when something crashes. Never your logs, paths or account details.'
+            : 'No reporting endpoint is configured for this build, so nothing is ever sent.'
+        }</div>
+      </div>`;
+
+    const control = el('div', { class: 'control' });
+    const box = el('button', {
+      class: 'switch',
+      role: 'switch',
+      'aria-checked': String(enabled),
+      'aria-label': 'Send crash reports',
+      disabled: !configured
+    });
+    box.addEventListener('click', async () => {
+      const next = !BN.state.data.settings.sendCrashReports;
+      await BN.state.setSettings({ sendCrashReports: next });
+      box.setAttribute('aria-checked', String(next));
+    });
+    control.append(box);
+    node.append(control);
+    return node;
+  }
+
+  /**
    * Rich presence, reporting what it is actually doing.
    *
    * A toggle that silently does nothing is worse than no toggle, so this
@@ -681,6 +732,7 @@
           'Include machine details in logs',
           'Adds your hardware and OS to the local log file so a support report is useful. Nothing is uploaded anywhere.'
         ),
+        crashReportRow(),
         row(
           'Launcher logs',
           'What the launcher recorded on this run and the one before it.',

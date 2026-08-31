@@ -130,9 +130,23 @@ function notify(title, body, { route = null } = {}) {
  * down with nothing written anywhere. The process still exits on a genuine
  * crash - this only makes sure there is a record of why.
  */
+/**
+ * Reports a crash, if and only if the user has turned it on and an endpoint is
+ * configured. Used by the process handlers and by renderer errors alike.
+ */
+function reportCrash(err, extra) {
+  return log?.report(err, {
+    endpoint: settings?.get('crashReportUrl'),
+    enabled: settings?.get('sendCrashReports') === true,
+    version: app.getVersion(),
+    extra
+  });
+}
+
 function installCrashHandlers() {
   process.on('uncaughtException', (err) => {
     log?.error('main', 'Uncaught exception', err);
+    reportCrash(err, { scope: 'main' });
     if (app.isReady() && !quitting) {
       dialog.showErrorBox(
         'BlackNight Launcher hit a problem',
@@ -145,6 +159,7 @@ Details were written to the log file, which you can open from Settings > Privacy
 
   process.on('unhandledRejection', (reason) => {
     log?.error('main', 'Unhandled promise rejection', reason);
+    reportCrash(reason, { scope: 'main-rejection' });
   });
 }
 
@@ -211,7 +226,11 @@ function bootServices() {
   auth = new Auth(dataDir);
   downloader = new Downloader(dataDir, settings);
   library = new Library(dataDir, catalog, downloader, settings, { allowSimulated: !app.isPackaged });
-  updates = new Updates({ packaged: app.isPackaged, autoCheck: settings.get('autoCheckUpdates') !== false });
+  updates = new Updates({
+    packaged: app.isPackaged,
+    autoCheck: settings.get('autoCheckUpdates') !== false,
+    betaChannel: settings.get('betaChannel') === true
+  });
   hardware = new Hardware(app, settings);
   presence = new Presence({ enabled: settings.get('richPresence') !== false });
 
@@ -528,7 +547,9 @@ function registerIpc() {
   handle('log:write', (level, scope, message, detail) => {
     // The renderer reports its own failures through here, so a broken view
     // leaves the same trail a broken service does.
-    log.log(['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info', scope || 'renderer', message, detail);
+    const chosen = ['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info';
+    log.log(chosen, scope || 'renderer', message, detail);
+    if (chosen === 'error') reportCrash({ message, stack: detail?.stack }, { scope: scope || 'renderer' });
     return true;
   });
   handle('log:location', () => log.location());

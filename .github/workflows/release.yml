@@ -18,9 +18,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -36,15 +36,43 @@ jobs:
       - name: Rebuild the app icon
         run: npm run icon
 
+      # The notes come from the CHANGELOG section release.js just rolled, so a
+      # release is never published with an empty body. Node rather than awk in
+      # a YAML block: the quoting between YAML, bash and awk mangles the
+      # brackets in "## [1.0.1]" quietly.
+      - name: Extract the release notes
+        id: notes
+        shell: bash
+        run: |
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            node scripts/release-notes.js "$GITHUB_REF_NAME"
+            echo ""
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and publish the installer
         run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Set these two repository secrets to produce a signed build. Without
+          # them electron-builder still publishes, just unsigned, so a missing
+          # certificate never blocks a release.
+          CSC_LINK: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+
+      - name: Put the notes on the release
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release edit "$GITHUB_REF_NAME" --notes "${{ steps.notes.outputs.body }}" ||             echo "Could not attach notes; the release itself is published."
 
       # Kept even when publishing succeeds, so a tagged build is downloadable
       # from the run itself if the release step is ever reverted.
       - name: Keep the installer as an artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: BlackNightLauncher-Setup
           path: release/*.exe
