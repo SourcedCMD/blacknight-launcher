@@ -1,0 +1,51 @@
+name: Release
+
+# Auto-update reads GitHub Releases, so a release has to exist for it to find.
+# Pushing a version tag builds the Windows installer and publishes it, along
+# with the latest.yml manifest electron-updater looks for.
+on:
+  push:
+    tags:
+      - 'v*'
+  # Also runnable by hand, to produce a build without tagging one.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      # The icon is built from the committed PNG masters rather than being
+      # taken on trust, so a stale .ico can never ship.
+      - name: Rebuild the app icon
+        run: npm run icon
+
+      - name: Build and publish the installer
+        run: npx electron-builder --win nsis --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Kept even when publishing succeeds, so a tagged build is downloadable
+      # from the run itself if the release step is ever reverted.
+      - name: Keep the installer as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackNightLauncher-Setup
+          path: release/*.exe
+          if-no-files-found: error

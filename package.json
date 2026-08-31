@@ -5,6 +5,14 @@
   "description": "The official game launcher for BlackNight Studios.",
   "author": "BlackNight Studios",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SourcedCMD/blacknight-launcher.git"
+  },
+  "homepage": "https://github.com/SourcedCMD/blacknight-launcher#readme",
+  "bugs": {
+    "url": "https://github.com/SourcedCMD/blacknight-launcher/issues"
+  },
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -61,8 +69,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "BLACKNIGHT-STUDIOS",
-        "repo": "game-launcher"
+        "owner": "SourcedCMD",
+        "repo": "blacknight-launcher"
       }
     ]
   }

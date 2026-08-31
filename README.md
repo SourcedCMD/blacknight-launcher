@@ -290,8 +290,9 @@ npm run icon
 ## Updates
 
 The launcher updates itself through `electron-updater`, published to GitHub
-Releases (`build.publish` in `package.json`). Set `owner` and `repo` to the
-real repository before the first release.
+Releases from
+[SourcedCMD/blacknight-launcher](https://github.com/SourcedCMD/blacknight-launcher)
+(`build.publish` in `package.json`).
 
 Checks run once a few seconds after startup, and again whenever the user
 presses **Check now** under Settings → About. Downloads are explicit rather
@@ -299,9 +300,24 @@ than automatic — a launcher that saturates the connection while a game is
 installing is a launcher people turn off — and the new version is applied on
 the next quit.
 
-To cut a release: bump `version` in `package.json`, run `npm run dist:win`, and
-publish `release/BlackNightLauncher-Setup-<version>.exe` together with
-`latest.yml` and the `.blockmap` to the matching GitHub release tag.
+To cut a release, bump `version` in `package.json` and push a matching tag:
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+`.github/workflows/release.yml` then runs the tests, rebuilds the icon from its
+PNG masters so a stale `.ico` cannot ship, builds the installer and publishes
+it with `latest.yml` and the `.blockmap` — which is what `electron-updater`
+reads. `.github/workflows/ci.yml` runs the tests on every push and pull request.
+
+Building by hand still works (`npm run dist:win`), but the artefacts then have
+to be attached to the release manually.
+
+Because the repository is public, updates need no credentials. A private
+repository would mean shipping a GitHub token inside the app to every user, so
+if it is ever made private the update feed should move to a generic HTTPS
+provider on your own server instead.
 
 ## Status
 
