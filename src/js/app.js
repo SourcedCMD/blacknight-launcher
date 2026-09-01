@@ -674,6 +674,8 @@
       { group: 'Actions', label: 'Achievements', icon: 'award', keywords: 'badges trophies', run: () => BN.views.achievements.open() },
       { group: 'Actions', label: 'Your year in the dark', icon: 'sparkles', keywords: 'review wrapped stats year', run: () => BN.views.journal.yearInReview() },
       { group: 'Actions', label: 'Share your library', icon: 'share', keywords: 'share library page export html', run: () => BN.views.libraryShare.open() },
+      { group: 'Actions', label: 'Your backlog', icon: 'clock', keywords: 'backlog unplayed never started waiting', run: () => BN.views.insights.openBacklog() },
+      { group: 'Actions', label: "What's new", icon: 'info', keywords: 'changelog release notes whats new version', run: () => BN.views.transfer.whatsNew() },
       { group: 'Actions', label: 'When you play', icon: 'clock', keywords: 'night map heatmap hours journal when', run: () => BN.views.journal.open() },
       { group: 'Account', label: 'Sign out', icon: 'logout', run: signOut }
     );

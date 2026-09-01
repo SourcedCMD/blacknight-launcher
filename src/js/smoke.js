@@ -27,7 +27,7 @@
 
   const VIEWS = [
     'games', 'store', 'plus', 'downloads', 'settings', 'profile',
-    'auth', 'journal', 'achievements', 'handoff', 'nightmap', 'libraryShare', 'transfer'
+    'auth', 'journal', 'achievements', 'handoff', 'nightmap', 'libraryShare', 'transfer', 'insights'
   ];
 
   const problems = [];

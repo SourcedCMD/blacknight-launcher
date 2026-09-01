@@ -18,6 +18,10 @@
     { id: 'about', label: 'About', icon: 'info' }
   ];
 
+  // Endonyms: a language picker that lists languages in a language you cannot
+  // read is a picker for people who do not need it.
+  const LANGUAGE_NAMES = { en: 'English', fr: 'Français' };
+
   const ACCENTS = [
     { id: 'moonlight', label: 'Moonlight', color: '#8fb8ff' },
     { id: 'eclipse', label: 'Eclipse', color: '#d5dcec' },
@@ -279,6 +283,16 @@
           'Finds what Steam, Epic, GOG and Xbox have installed so your library is the whole machine. Read only, and nothing leaves this PC.',
           () => BN.util.bus.emit('foreign-changed')),
 
+        // Only the locales that are actually registered are offered, so this
+        // list cannot promise a language the build does not carry.
+        select('locale', 'Language', 'Anything not translated stays in English.',
+          [['auto', 'Match my system'], ...BN.i18n.available().map((code) => [code, LANGUAGE_NAMES[code] || code])],
+          (value) => {
+            BN.i18n.setLocale(value);
+            BN.app.go('settings');
+          }),
+
+        cloudSavesRow(),
         transferRow(),
         whatsNewRow(),
 
@@ -811,6 +825,44 @@
       ),
       group('Session', null, row('Sign out', 'Ends this session on this machine.', outBtn))
     ];
+  }
+
+  /**
+   * Cloud saves, which say plainly when they cannot do anything.
+   *
+   * Three things have to be true before a save leaves the machine: the switch
+   * is on, a service is configured, and this launcher is signed in to it.
+   * With any of them missing the switch is disabled and the row says which -
+   * rather than offering a control that silently does nothing.
+   */
+  function cloudSavesRow() {
+    const settings = BN.state.data.settings;
+    const configured = !!(settings.accountsUrl || '').trim();
+    const signedIn = !!settings.remoteToken;
+    const usable = configured && signedIn;
+
+    const description = !configured
+      ? 'No account service is configured, so there is nowhere for a save to go.'
+      : !signedIn
+        ? 'Sign in to the account service to sync saves between machines.'
+        : 'Uploads a save when you finish a session, and never overwrites without asking.';
+
+    const sw = el('button', {
+      class: 'switch',
+      role: 'switch',
+      'aria-checked': String(usable && settings.cloudSaves === true),
+      'aria-label': 'Sync saves'
+    });
+    sw.disabled = !usable;
+
+    sw.addEventListener('click', async () => {
+      if (!usable) return;
+      const next = sw.getAttribute('aria-checked') !== 'true';
+      sw.setAttribute('aria-checked', String(next));
+      await BN.state.setSettings({ cloudSaves: next });
+    });
+
+    return row('Sync saves', description, sw);
   }
 
   /** Moving settings between machines. */

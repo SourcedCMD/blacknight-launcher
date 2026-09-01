@@ -372,6 +372,29 @@
     shareBtn.addEventListener('click', () => BN.share.share(game.id));
     actions.appendChild(shareBtn);
 
+    // Only worth offering once there is some playtime to have grown anything.
+    if (game.installed || (game.playtimeSeconds || 0) > 0) {
+      const timeline = el('button', { class: 'btn btn-ghost', 'data-tip': 'How this art grows' });
+      timeline.innerHTML = icon('sparkles');
+      timeline.addEventListener('click', () => {
+        BN.ui.closeModal();
+        BN.views.insights.openArtTimeline(game.id);
+      });
+      actions.appendChild(timeline);
+    }
+
+    // The night map for this one title, which is a different question from the
+    // one the journal answers across everything.
+    if ((game.playtimeSeconds || 0) > 0) {
+      const when = el('button', { class: 'btn btn-ghost', 'data-tip': 'When you play this' });
+      when.innerHTML = icon('clock');
+      when.addEventListener('click', () => {
+        BN.ui.closeModal();
+        BN.views.journal.open(game.id);
+      });
+      actions.appendChild(when);
+    }
+
     if (game.installed) {
       const folder = el('button', { class: 'btn btn-ghost', 'data-tip': 'Open install folder' });
       folder.innerHTML = icon('folder');

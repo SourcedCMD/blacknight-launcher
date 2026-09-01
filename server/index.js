@@ -9,6 +9,7 @@ const { Store } = require('./lib/store');
 const { upgrade } = require('./lib/ws');
 const { Limits } = require('./lib/limits');
 const { render } = require('./lib/dashboard');
+const { Saves } = require('./lib/saves');
 
 /**
  * The services the launcher already knows how to talk to.
@@ -29,6 +30,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const accounts = new Accounts(DATA_DIR);
 const crashes = new Store(DATA_DIR, 'crashes', { items: [] });
+const saves = new Saves(DATA_DIR);
 
 const limits = new Limits();
 // Counters for addresses nobody has seen in a while are dropped, so this does
@@ -303,6 +305,75 @@ router.get('/crash/dashboard', (req, res, { url }) => {
 });
 
 /* -------------------------------------------------------------------- */
+/* Cloud saves                                                           */
+
+/**
+ * Every route here needs a session, and acts only on that account's own
+ * saves. The account id comes from the token rather than the request body,
+ * so there is no id to tamper with.
+ */
+function requireUser(req, res) {
+  const user = accounts.session(bearer(req));
+  if (!user) {
+    json(res, 401, { error: 'Not signed in.' });
+    return null;
+  }
+  return user;
+}
+
+router.get('/saves', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  json(res, 200, saves.usage(user.id));
+});
+
+/** What is stored for a title, so the launcher can decide before transferring. */
+router.get('/saves/head', (req, res, { url }) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  json(res, 200, { head: saves.head(user.id, url.searchParams.get('gameId')) });
+});
+
+router.get('/saves/versions', (req, res, { url }) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  json(res, 200, { versions: saves.list(user.id, url.searchParams.get('gameId')) });
+});
+
+/**
+ * Uploads a save.
+ *
+ * A 409 means another machine got there first. Both versions still exist and
+ * the reply names them, so the launcher can ask rather than pick.
+ */
+router.post('/saves/push', (req, res, { body }) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+
+  try {
+    json(res, 200, { ok: true, version: saves.push(user.id, body.gameId, body) });
+  } catch (err) {
+    if (err.status === 409) {
+      json(res, 409, { error: err.message, conflict: err.conflict });
+      return;
+    }
+    throw err;
+  }
+});
+
+router.post('/saves/pull', (req, res, { body }) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  json(res, 200, saves.pull(user.id, body.gameId, body.versionId || null));
+});
+
+router.post('/saves/remove', (req, res, { body }) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  json(res, 200, saves.remove(user.id, body.gameId));
+});
+
+/* -------------------------------------------------------------------- */
 /* Live player counts                                                    */
 
 /**
@@ -450,6 +521,7 @@ server.listen(PORT, () => {
   log('info', `  accounts      POST /auth/register, /auth/login, /auth/session`);
   log('info', `  passkeys      POST /auth/passkey/login-challenge, /auth/passkey/login`);
   log('info', `  entitlements  GET  /entitlements`);
+  log('info', `  saves         POST /saves/push, /saves/pull`);
   log('info', `  crashes       POST /crash`);
   log('info', `  presence      GET  /presence`);
   log('info', `  crashes       GET  /crash/dashboard?token=...`);

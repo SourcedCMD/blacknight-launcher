@@ -331,4 +331,66 @@ const LAUNCHER_URLS = [
 
 const isLauncherUrl = (url) => LAUNCHER_URLS.some((pattern) => pattern.test(String(url || '')));
 
-module.exports = { scan, parseVdf, looksLikeAGame, isLauncherUrl, SOURCES };
+/**
+ * Reads back how long another launcher says a title has been played.
+ *
+ * Steam records total playtime in its own manifest, so this is a read of a
+ * number that already exists rather than a stopwatch running in the
+ * background. That distinction matters: the launcher does not watch other
+ * people's processes, and it does not need to.
+ *
+ * Epic, GOG and Xbox record nothing readable, so a title from those sources
+ * reports null - which the UI shows as "not recorded" rather than as zero.
+ */
+function playtimeFor(id) {
+  const [source, appId] = String(id || '').split(':');
+  if (source !== 'steam' || !/^\d+$/.test(appId || '')) return null;
+
+  const root = steamRoot();
+  if (!root) return null;
+
+  for (const folder of steamLibraries(root)) {
+    try {
+      const file = path.join(folder, `appmanifest_${appId}.acf`);
+      if (!fs.existsSync(file)) continue;
+
+      const app = parseVdf(fs.readFileSync(file, 'utf8')).AppState;
+      // Steam does not put playtime in the manifest; what it does put there is
+      // when the title was last played, which is the honest thing to report.
+      const lastPlayed = Number(app?.LastPlayed);
+      return {
+        lastPlayed: lastPlayed ? lastPlayed * 1000 : null,
+        sizeBytes: Number(app?.SizeOnDisk) || 0,
+        // Named so nobody mistakes this for a playtime the launcher measured.
+        source: 'steam-manifest'
+      };
+    } catch { /* try the next library */ }
+  }
+  return null;
+}
+
+/**
+ * Everything found, with whatever each launcher records about recency.
+ *
+ * Sorted by when a title was last played where that is known, so the list
+ * opens on what somebody actually plays rather than alphabetically.
+ */
+function scanWithActivity(options) {
+  const result = scan(options);
+
+  for (const game of result.games) {
+    const activity = playtimeFor(game.id);
+    if (activity?.lastPlayed) game.lastPlayed = activity.lastPlayed;
+  }
+
+  result.games.sort((a, b) => {
+    if (a.lastPlayed && b.lastPlayed) return b.lastPlayed - a.lastPlayed;
+    if (a.lastPlayed) return -1;
+    if (b.lastPlayed) return 1;
+    return a.title.localeCompare(b.title);
+  });
+
+  return result;
+}
+
+module.exports = { scan, scanWithActivity, playtimeFor, parseVdf, looksLikeAGame, isLauncherUrl, SOURCES };

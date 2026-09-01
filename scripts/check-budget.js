@@ -23,16 +23,21 @@ const ROOT = path.join(__dirname, '..');
 const BUDGETS = [
   // Every classic script the page loads, in dependency order. This is the
   // number that decides how quickly the window paints.
-  { name: 'Renderer JavaScript', dir: 'src/js', ext: '.js', maxKB: 460 },
+  //
+  // Raised from 460 when passkeys, cloud saves, the backlog, the art timeline,
+  // session goals and a French catalogue landed together. That is six features
+  // and a locale, not drift - but the next raise should be argued for on its
+  // own terms rather than treated as a precedent.
+  { name: 'Renderer JavaScript', dir: 'src/js', ext: '.js', maxKB: 540 },
 
   // One stylesheet, parsed before first paint.
   { name: 'Stylesheets', dir: 'src/css', ext: '.css', maxKB: 190 },
 
   // Runs before the window exists, so its cost is start-up cost.
-  { name: 'Main process', dir: 'electron', ext: '.js', maxKB: 320 },
+  { name: 'Main process', dir: 'electron', ext: '.js', maxKB: 360 },
 
   // The whole shipped renderer, which is what the budget is really about.
-  { name: 'Everything the window loads', dir: 'src', ext: null, maxKB: 700 }
+  { name: 'Everything the window loads', dir: 'src', ext: null, maxKB: 780 }
 ];
 
 /** Total bytes of the matching files under a directory. */

@@ -330,7 +330,13 @@
       card.innerHTML = `
         <span class="foreign-mark">${esc(SOURCE_LABEL[game.source] || game.source)}</span>
         <span class="foreign-title">${esc(game.title)}</span>
-        ${game.sizeBytes ? `<span class="foreign-meta">${esc(BN.util.bytes(game.sizeBytes))}</span>` : ''}`;
+        <span class="foreign-meta">${
+          game.lastPlayed
+            ? esc(BN.util.relative(game.lastPlayed))
+            : game.sizeBytes
+              ? esc(BN.util.bytes(game.sizeBytes))
+              : ''
+        }</span>`;
 
       card.addEventListener('click', async () => {
         // The owning launcher starts it, or the folder opens when there is

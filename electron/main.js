@@ -236,6 +236,7 @@ function bootServices() {
   // Attached rather than constructor-injected so the Library keeps working
   // untouched in tests, where nothing should be beating at anything.
   library.presenceCount = new (require('./services/presence-count').PresenceCount)(settings, log);
+  library.cloudSaves = new (require('./services/cloudsaves').CloudSaves)(library, settings, log);
   updates = new Updates({
     packaged: app.isPackaged,
     autoCheck: settings.get('autoCheckUpdates') !== false,
@@ -693,6 +694,12 @@ function registerIpc() {
   const remoteAccounts = new (require('./services/accounts-remote').RemoteAccounts)(settings, log);
   handle('account:passkey-challenge', (userId) => remoteAccounts.passkeyChallenge(userId));
   handle('account:passkey-register', (payload) => remoteAccounts.passkeyRegister(payload));
+  handle('saves:cloud-status', () => library.cloudSaves.status());
+  handle('saves:cloud-check', (gameId) => library.cloudSaves.check(gameId));
+  handle('saves:cloud-push', (gameId) => library.cloudSaves.push(gameId));
+  handle('saves:cloud-pull', (gameId, versionId) => library.cloudSaves.pull(gameId, versionId));
+  handle('saves:cloud-usage', () => library.cloudSaves.usage());
+
   handle('account:passkey-login-challenge', () => remoteAccounts.passkeyLoginChallenge());
   handle('account:passkey-login', (payload) => remoteAccounts.passkeyLogin(payload));
   handle('account:passkey-remove', (token, credentialId) => remoteAccounts.passkeyRemove(token, credentialId));
@@ -701,7 +708,7 @@ function registerIpc() {
     if (settings.get('detectOtherLaunchers') !== true) {
       return { games: [], errors: [], scannedAt: Date.now(), reason: 'not-enabled' };
     }
-    return require('./services/foreign').scan();
+    return require('./services/foreign').scanWithActivity();
   });
 
   handle('library:play-map', (options) => library.playMap(options));

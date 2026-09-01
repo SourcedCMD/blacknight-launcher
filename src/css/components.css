@@ -1462,3 +1462,76 @@ kbd {
   padding: 1px 5px;
   border-radius: 4px;
 }
+
+/* --- The backlog --------------------------------------------------------- */
+
+.backlog-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  text-align: left;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease);
+}
+
+.backlog-row:hover { border-color: var(--accent); }
+
+.backlog-art {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.backlog-art svg { width: 100%; height: 100%; display: block; }
+
+.backlog-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.backlog-title { font-weight: 600; font-size: 0.88rem; }
+.backlog-meta { font-size: 0.74rem; color: var(--text-3); }
+
+/* --- The art timeline ---------------------------------------------------- */
+
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.timeline-cell {
+  margin: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.timeline-cell.is-here { border-color: var(--accent); }
+
+.timeline-art { display: block; aspect-ratio: 3 / 2; overflow: hidden; }
+.timeline-art svg { width: 100%; height: 100%; display: block; }
+
+.timeline-cell figcaption {
+  padding: 7px 10px;
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+
+.timeline-cell.is-here figcaption { color: var(--accent); }
+
+/* The session goal, marked on the same scale as the bar. */
+.ghost-goal {
+  position: absolute;
+  inset-block: -3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ok, var(--accent));
+  opacity: 0.9;
+}

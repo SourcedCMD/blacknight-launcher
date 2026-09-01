@@ -1100,6 +1100,12 @@ class Library {
     if (!session) return { ok: false };
     this.sessions.delete(gameId);
     this.presenceCount?.stop(gameId);
+
+    // Uploaded after the local snapshot below, and never awaited: a slow or
+    // unreachable service must not hold up the end of a session.
+    setTimeout(() => {
+      this.cloudSaves?.push(gameId).catch(() => {});
+    }, 1500);
     const entry = this._entry(gameId);
     const seconds = Math.round((Date.now() - session.startedAt) / 1000);
     entry.playtimeSeconds += seconds;

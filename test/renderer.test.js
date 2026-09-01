@@ -113,9 +113,11 @@ test('a locale with no catalog falls back to English rather than breaking', () =
 });
 
 test('a registered locale overrides only what it defines', () => {
-  BN.i18n.register('fr', { 'action.play': 'Jouer' });
-  BN.i18n.setLocale('fr');
-  assert.equal(BN.t('action.play'), 'Jouer', 'the translated key');
+  // A made-up code, not a real one: registering over a shipped catalogue would
+  // make this test depend on what that catalogue happens to contain.
+  BN.i18n.register('zz', { 'action.play': 'Zzz' });
+  BN.i18n.setLocale('zz');
+  assert.equal(BN.t('action.play'), 'Zzz', 'the translated key');
   assert.equal(BN.t('action.close'), 'Close', 'and English for the rest');
   BN.i18n.setLocale('en');
 });
@@ -387,4 +389,64 @@ test('markdown cannot smuggle html through the changelog', () => {
 test('an unterminated list still closes', () => {
   const html = BN.views.transfer.renderMarkdown('- one\n- two');
   assert.equal((html.match(/<ul>/g) || []).length, (html.match(/<\/ul>/g) || []).length);
+});
+
+/* --- The French catalogue ------------------------------------------------ */
+
+require('../src/js/locales/fr.js');
+
+test('French is registered alongside English', () => {
+  // Other tests in this file register throwaway locales, so this checks that
+  // the two real ones are present rather than that nothing else is.
+  const available = BN.i18n.available();
+  assert.ok(available.includes('en'));
+  assert.ok(available.includes('fr'));
+});
+
+test('every English key has a French translation', () => {
+  // A partial catalogue is not a bug in itself — the fallback handles it — but
+  // it means somebody added a string and did not say so. This turns that into
+  // a failed build rather than an English word in a French UI.
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const english = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'i18n.js'), 'utf8');
+  const keys = [...english.matchAll(/^ {4}'([^']+)':/gm)].map((m) => m[1]);
+
+  BN.i18n.setLocale('en');
+  const inEnglish = Object.fromEntries(keys.map((key) => [key, BN.t(key)]));
+  BN.i18n.setLocale('fr');
+  // t() falls back to English, so a key with no French entry comes back byte
+  // for byte identical to the English one.
+  const missing = keys.filter((key) => BN.t(key) === inEnglish[key]);
+  BN.i18n.setLocale('en');
+
+  // Some keys are legitimately identical in both (a brand name, "Pause").
+  const identical = ['nav.plus', 'action.pause', 'status.preorder'];
+  const real = missing.filter((key) => !identical.includes(key));
+
+  assert.deepEqual(real, [], 'these keys have no French translation');
+});
+
+test('placeholders survive translation', () => {
+  BN.i18n.setLocale('fr');
+  const filled = BN.t('status.download', { size: '90 Go' });
+  assert.match(filled, /90 Go/);
+  assert.ok(!filled.includes('{size}'), 'the placeholder was replaced');
+  BN.i18n.setLocale('en');
+});
+
+test('French plurals pick the right form', () => {
+  BN.i18n.setLocale('fr');
+  assert.match(BN.i18n.plural('updates.available', 1, { count: 1 }), /1 mise à jour/);
+  assert.match(BN.i18n.plural('updates.available', 3, { count: 3 }), /3 mises à jour/);
+  BN.i18n.setLocale('en');
+});
+
+test('a key French does not define falls back to English', () => {
+  BN.i18n.register('xx', { 'action.play': 'Xx' });
+  BN.i18n.setLocale('xx');
+  assert.equal(BN.t('action.play'), 'Xx');
+  assert.equal(BN.t('action.close'), 'Close', 'and everything else stays readable');
+  BN.i18n.setLocale('en');
 });

@@ -52,6 +52,15 @@ const DEFAULTS = {
   // Empty until somebody deploys `server/`. While empty, passkey enrolment
   // reports that there is nowhere to keep a credential rather than failing.
   accountsUrl: '',
+  // Off until asked for, and dormant without an account service and a session.
+  cloudSaves: false,
+  // The session token for the account service, kept apart from the local one.
+  remoteToken: '',
+  // gameId -> the version id this machine last synced, which is what makes a
+  // conflict detectable rather than a silent overwrite.
+  cloudSaveState: {},
+  // gameId -> minutes. Empty unless somebody sets one for themselves.
+  sessionGoals: {},
   // Where to send "somebody is playing this" beats. Empty means the store
   // shows no player counts, which is what it has always done.
   presenceUrl: '',

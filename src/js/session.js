@@ -60,6 +60,14 @@
       return;
     }
 
+    // A goal, if one was set for this title. Drawn on the same scale as the
+    // bar, so it sits where it actually falls rather than at a fixed point.
+    const goalMinutes = BN.views?.insights?.goalFor?.(entry.gameId);
+    const goalFraction = goalMinutes && ghost.median
+      ? Math.min(1, (goalMinutes * 60) / (ghost.median * 2))
+      : null;
+    const pastGoal = goalMinutes && ghost.elapsed >= goalMinutes * 60;
+
     host.classList.remove('hidden');
     host.innerHTML = `
       <div class="side-title side-label">Playing now</div>
@@ -70,9 +78,21 @@
         <div class="ghost-track" role="img" aria-label="${BN.util.esc(shown.text)}">
           <div class="ghost-fill" style="width:${Math.round(shown.fill * 100)}%"></div>
           ${ghost.median !== null ? '<div class="ghost-median" title="Your usual session here"></div>' : ''}
+          ${goalFraction !== null
+            ? `<div class="ghost-goal" style="left:${Math.round(goalFraction * 100)}%" title="Your goal: ${goalMinutes} minutes"></div>`
+            : ''}
         </div>
-        <div class="ghost-meta side-label">${BN.util.esc(shown.text)}</div>
+        <div class="ghost-meta side-label">${BN.util.esc(shown.text)}${
+          pastGoal ? ' &middot; past your goal' : ''
+        }</div>
       </div>`;
+
+    // Clicking the bar is how a goal gets set, which keeps it out of a menu
+    // nobody would find.
+    const bar = host.querySelector('.ghost');
+    bar.addEventListener('click', () => BN.views.insights.askGoal(entry.gameId));
+    bar.style.cursor = 'pointer';
+    bar.title = goalMinutes ? `Goal: ${goalMinutes} minutes. Click to change.` : 'Click to set a session goal';
   }
 
   /**

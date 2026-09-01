@@ -58,6 +58,9 @@ electron/            Main process
     chunks.js        Block-level delta patching: manifests, diffs, plans
     peers.js         LAN peer install over multicast discovery
     foreign.js       Games other launchers installed (read only, opt in)
+    presence-count.js Heartbeats so the store can show a player count
+    cloudsaves.js    Packs a save folder and syncs it, refusing to overwrite
+    accounts-remote.js Client for the account service (passkeys, saves)
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -422,9 +425,14 @@ server/
   lib/accounts.js    scrypt hashing matching the launcher exactly
   lib/ws.js          RFC 6455 server: handshake, framing, unmasking
   lib/store.js       The launcher's atomic JSON store
+  lib/limits.js      Rate limiting and account lockout
+  lib/webauthn.js    Passkey registration and assertion verification
+  lib/cbor.js        Just enough CBOR to read an attestation
+  lib/saves.js       Cloud saves, with conflict detection
+  lib/dashboard.js   The crash page
 ```
 
-Three things it is careful about:
+Five things it is careful about:
 
 - **Sign-in cannot be used to enumerate accounts.** A wrong password and an
   address that was never registered produce the same reply, and the missing
@@ -435,9 +443,30 @@ Three things it is careful about:
 - **Entitlements cannot be self-granted.** Granting is behind a shared secret
   meant for a payment processor's webhook, not a session — and with
   `ADMIN_TOKEN` unset, nothing can grant anything.
+- **Guessing is expensive and then impossible.** A per-address sliding window
+  caps how often sign-in can be called at all, and a per-account backoff locks
+  an account after sustained failures. The lockout reply is shaped like a
+  wrong password, so it does not become an oracle in its own right.
+- **A save is never silently overwritten.** A push names the version it was
+  based on; if the server has moved on, it is refused and both versions stay
+  recoverable.
 
 What it is not: a payment system, a CDN, or hardened for the open internet.
 `server/README.md` says so plainly, along with how to point the launcher at it.
+
+### Passkeys
+
+`lib/webauthn.js` implements every check that decides whether a signature is
+genuine and whether it was made for this server, this challenge and this
+credential. It does **not** verify attestation statements — proving which make
+of authenticator created a credential needs a trust store of vendor roots, and
+for signing somebody into their own launcher account the security is in the
+signature, not the brand of key. That absence is deliberate and marked in the
+module; anywhere that must exclude unknown authenticators would need it added.
+
+Only ES256 and RS256 are accepted, because those are what browsers and platform
+authenticators actually produce and a shorter list is a shorter list of ways to
+be wrong.
 
 ## Performance budget
 

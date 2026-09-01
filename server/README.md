@@ -116,3 +116,48 @@ npm run test:server
 Starts a real server on an ephemeral port with its own data directory and
 talks to it over a socket — including the WebSocket rendezvous, which is
 exercised through the browser's own `WebSocket` client rather than a stub.
+
+## Rate limits
+
+| Bucket | Limit | Window |
+| --- | --- | --- |
+| `login` | 10 | 5 minutes |
+| `register` | 5 | 15 minutes |
+| `reset` | 5 | 15 minutes |
+| `crash` | 60 | 1 minute |
+| everything else | 120 | 1 minute |
+
+Plus a per-account lockout after five consecutive failed sign-ins, growing to
+fifteen minutes and capping there so nobody can be locked out permanently by
+somebody else's attempts.
+
+Counters live in memory. A restart forgets them, which is the right trade for a
+single process: an attacker cannot restart the server, and persisting lockout
+state invites its own bugs.
+
+Behind a reverse proxy, set `TRUST_PROXY=1` so the forwarded address is used.
+Without it the socket address is used, because a client can send
+`X-Forwarded-For` itself and trusting it unconditionally would let anyone forge
+their way around a limit.
+
+`RATE_LIMITS=off` disables them entirely. That exists so the functional test
+suite can register dozens of accounts from one address; the limits themselves
+are covered by their own unit tests and by a second server that runs with them
+on.
+
+## Passkeys
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `RP_ID` | `localhost` | The domain credentials are scoped to |
+| `RP_ORIGIN` | `https://localhost` | The exact origin an assertion must name |
+
+Both must match where the launcher actually runs, or every assertion is
+correctly refused as being for a different site.
+
+## Cloud saves
+
+A push carries `basedOn`, the version the machine last synced. If the server has
+moved on, the push is refused with a 409 and both versions are named — the
+launcher asks rather than picking. Five versions are kept per title, and the
+newest is never pruned.

@@ -9,6 +9,63 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Rate limiting and account lockout** on the services. Sign-in hashes with
+  scrypt, which is expensive by design — without a ceiling that endpoint is
+  both brute-forceable and a cheap way to pin the CPU. A per-address sliding
+  window plus a per-account backoff, and a lockout reply shaped exactly like a
+  wrong password so it still cannot be used to enumerate accounts.
+- **Passkey sign-in**, verified properly: a CBOR decoder, attestation parsing,
+  ES256 and RS256 signature checks, challenge and origin pinning, single-use
+  challenges, and a signature-counter check that catches a cloned
+  authenticator. Attestation *statements* are still not verified, which is a
+  deliberate choice recorded in the module.
+- **Cloud saves.** A push carries the version it was based on, so a second
+  machine cannot silently overwrite work the first one did — a conflict stops
+  and asks, and both versions stay recoverable. The local snapshot is taken
+  before anything is written over.
+- **Live player counts.** `playersOnline` has been read by the store UI since
+  it was written and never populated. A heartbeat carries a title id and a
+  random client id, nothing else; counts below five are not reported at all.
+- **A crash dashboard** at `/crash/dashboard`, behind the same token as the
+  JSON. `/crash/summary` had grouped and ranked crashes for months with no way
+  to read it but curl.
+- **A real smoke test** (`npm run smoke`) that boots the app and drives it
+  through every view, modal and generator, failing on any uncaught error. Runs
+  on the Windows leg of CI.
+- **Settings search** across all seven sections — 72 rows, previously findable
+  only by clicking through every tab.
+- **French**, the first locale other than English, with a test that fails the
+  build when an English key has no translation. A translation layer with one
+  language in it had never actually been tested.
+- **Settings export and import**, leaving out anything machine-specific or
+  secret, and dropping keys the receiving build does not know.
+- **An in-app changelog**, read from the file that ships with the build.
+- **A backlog view**: installed, never really started, oldest first.
+- **An art timeline** showing what a title's art grows into, which the
+  deterministic generator could already compute.
+- **Session goals** — a mark on the ghost bar, set by the person playing.
+- **Deep links for actions**: `blacknight://install/<id>` and `play/<id>`,
+  always confirmed, because a link should never start a 90 GB download on its
+  own.
+- **Reduced-transparency and forced-colors support**, which the Mica chrome
+  previously ignored.
+- Last-played dates for games found in other launchers, read from the manifests
+  Steam already writes.
+
+### Fixed
+- `PORT=0` bound port 8080 instead of an ephemeral one: `Number('0') || 8080`
+  is falsy. Two test servers then fought over the same port, which is why
+  running both suites together hung.
+- The smoke runner spawned Electron through a shell, so killing it left
+  `electron.exe` holding the single-instance lock and every later run silently
+  hung.
+
+### Changed
+- The performance budget was raised deliberately, with the reason recorded in
+  `scripts/check-budget.js`, once six features and a locale landed together.
+
+
+### Added
 - **Services** (`server/`), a zero-dependency Node backend for the three
   settings the launcher already had and could not point anywhere: catalog,
   crash reports, and WebRTC rendezvous. Accounts with scrypt hashing matching
