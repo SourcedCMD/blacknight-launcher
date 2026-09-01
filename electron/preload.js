@@ -48,6 +48,13 @@ contextBridge.exposeInMainWorld('blacknight', {
     onChanged: (handler) => on('catalog:changed', handler)
   },
 
+  // Only the passkey endpoints. The launcher's own accounts stay local; this
+  // is dormant until `accountsUrl` points somewhere.
+  account: {
+    passkeyChallenge: (userId) => call('account:passkey-challenge', userId),
+    passkeyRegister: (payload) => call('account:passkey-register', payload)
+  },
+
   library: {
     list: () => call('library:list'),
     stats: () => call('library:stats'),

@@ -70,7 +70,7 @@
       art.innerHTML = BN.art.livingArt(game, 1920, 1080, 0.9);
       BN.util.coverSvg(art);
       node.querySelector('#attract-eyebrow').textContent =
-        BN.components.STATUS_LABEL[game.status] || game.status;
+        BN.components.statusLabel(game.status);
       node.querySelector('#attract-title').textContent = game.title;
       node.querySelector('#attract-tagline').textContent = game.tagline || '';
       art.classList.remove('in');

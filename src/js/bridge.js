@@ -61,6 +61,7 @@
     attractMode: true, evolvingArt: true, peerName: '', sharePlaying: true,
     sessionGhost: true, windDownHour: '',
     detectOtherLaunchers: false,
+    accountsUrl: '',
     rendezvousUrl: '', remoteSharing: false,
     lastRoute: 'games', autoCheckUpdates: true
     // peerId, windowBounds and windowMaximized are machine state, not
@@ -277,6 +278,12 @@
       async get() { return { ...db.settings }; },
       async set(patch) { Object.assign(db.settings, patch); save(); return { ...db.settings }; },
       async reset() { db.settings = { ...SETTINGS_DEFAULTS }; save(); return { ...db.settings }; }
+    },
+
+    // Dormant in the browser preview, the same as an unconfigured launcher.
+    account: {
+      async passkeyChallenge() { return { ok: false, reason: 'not-configured' }; },
+      async passkeyRegister() { return { ok: false, reason: 'not-configured' }; }
     },
 
     catalog: {

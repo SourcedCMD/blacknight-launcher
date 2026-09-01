@@ -7,16 +7,28 @@
   const BN = (window.BN = window.BN || {});
   const { el, esc, bytes, money, date, countdown, playtime } = BN.util;
   const icon = BN.icon;
+  // Looked up per call rather than captured, so changing locale takes effect
+  // on the next render instead of needing a reload.
+  const t = (key, vars) => BN.t(key, vars);
 
   /* --------------------------------------------------------------------- */
   /* Status                                                                 */
 
-  const STATUS_LABEL = {
-    released: 'Available now',
-    preorder: 'Pre-order',
-    announced: 'Announced',
-    'coming-soon': 'Coming soon'
+  /**
+   * The label for a title's release status.
+   *
+   * A function rather than a table, because a table is built once at load and
+   * would keep whatever language was active then. Falls back to the raw status
+   * so an unrecognised one is visible rather than blank.
+   */
+  const STATUS_KEY = {
+    released: 'status.released',
+    preorder: 'status.preorder',
+    announced: 'status.announced',
+    'coming-soon': 'status.comingSoon'
   };
+
+  const statusLabel = (status) => (STATUS_KEY[status] ? t(STATUS_KEY[status]) : status || '');
 
   /** Release instant for a pre-order, or null once a title is simply out. */
   function unlockAt(game) {
@@ -32,30 +44,30 @@
 
   /** The single source of truth for what a title's main button should do. */
   function primaryAction(game) {
-    if (game.running) return { key: 'running', label: 'Running', icon: 'zap', variant: 'btn-ghost', disabled: true };
+    if (game.running) return { key: 'running', label: t('action.running'), icon: 'zap', variant: 'btn-ghost', disabled: true };
 
     // A pre-loaded pre-order sits installed but locked until release night.
     if (game.installed && isLocked(game)) {
-      return { key: 'locked', label: 'Unlocks soon', icon: 'clock', variant: 'btn-ghost', disabled: true };
+      return { key: 'locked', label: t('action.locked'), icon: 'clock', variant: 'btn-ghost', disabled: true };
     }
-    if (game.installed) return { key: 'play', label: 'Play', icon: 'play', variant: 'btn-play' };
+    if (game.installed) return { key: 'play', label: t('action.play'), icon: 'play', variant: 'btn-play' };
     if (game.download) {
       return game.download.status === 'paused'
-        ? { key: 'resume', label: 'Resume', icon: 'download', variant: 'btn-accent' }
-        : { key: 'pause', label: 'Pause', icon: 'pause', variant: 'btn-ghost' };
+        ? { key: 'resume', label: t('action.resume'), icon: 'download', variant: 'btn-accent' }
+        : { key: 'pause', label: t('action.pause'), icon: 'pause', variant: 'btn-ghost' };
     }
     if (game.status === 'released') {
       if (!game.owned && game.price.usd > 0) return { key: 'buy', label: money(game.price.usd), icon: 'store', variant: 'btn-chrome' };
-      return { key: 'install', label: game.owned ? 'Install' : 'Get', icon: 'download', variant: 'btn-chrome' };
+      return { key: 'install', label: t(game.owned ? 'action.install' : 'action.get'), icon: 'download', variant: 'btn-chrome' };
     }
     if (game.status === 'preorder') {
       // Owning it early is the whole point: stage the build now so release
       // night is not spent watching a progress bar.
       return game.owned
-        ? { key: 'install', label: 'Pre-load', icon: 'download', variant: 'btn-chrome' }
-        : { key: 'preorder', label: 'Pre-order', icon: 'sparkles', variant: 'btn-chrome' };
+        ? { key: 'install', label: t('action.preload'), icon: 'download', variant: 'btn-chrome' }
+        : { key: 'preorder', label: t('action.preorder'), icon: 'sparkles', variant: 'btn-chrome' };
     }
-    return { key: 'wishlist', label: game.favorite ? 'Wishlisted' : 'Wishlist', icon: 'heart', variant: 'btn-ghost' };
+    return { key: 'wishlist', label: t(game.favorite ? 'action.wishlisted' : 'action.wishlist'), icon: 'heart', variant: 'btn-ghost' };
   }
 
   /** Runs whatever primaryAction() decided, with the right feedback. */
@@ -153,9 +165,9 @@
   function statusBadge(game) {
     if (game.installed) return `<span class="badge badge-ok">${icon('checkCircle')} Installed</span>`;
     if (game.download) return `<span class="badge badge-accent">${icon('download')} ${Math.round(game.download.progress * 100)}%</span>`;
-    if (game.status === 'released') return `<span class="badge">${STATUS_LABEL.released}</span>`;
-    if (game.status === 'preorder') return `<span class="badge badge-accent">${STATUS_LABEL.preorder}</span>`;
-    return `<span class="badge">${STATUS_LABEL[game.status] || ''}</span>`;
+    if (game.status === 'released') return `<span class="badge">${statusLabel('released')}</span>`;
+    if (game.status === 'preorder') return `<span class="badge badge-accent">${statusLabel('preorder')}</span>`;
+    return `<span class="badge">${esc(statusLabel(game.status))}</span>`;
   }
 
   const priceTag = (game) => {
@@ -295,7 +307,7 @@
           <aside>
             <div class="panel" style="padding:18px">
               <dl class="kv">
-                <dt>Status</dt><dd>${esc(STATUS_LABEL[game.status] || game.status)}</dd>
+                <dt>Status</dt><dd>${esc(statusLabel(game.status))}</dd>
                 <dt>Release</dt><dd>${esc(date(game.releaseDate))}${days ? ` (${days}d)` : ''}</dd>
                 <dt>Developer</dt><dd>${esc(game.developer)}</dd>
                 <dt>Publisher</dt><dd>${esc(game.publisher)}</dd>
@@ -900,6 +912,6 @@
 
   BN.components = {
     primaryAction, runAction, actionButton, statusLine, statusBadge, priceTag,
-    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, launchRitual, STATUS_LABEL
+    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, launchRitual, statusLabel
   };
 })();

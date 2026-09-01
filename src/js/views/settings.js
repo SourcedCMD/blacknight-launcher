@@ -802,10 +802,42 @@
         user?.offline
           ? row('Password', 'Offline sessions do not use a password.', el('span', { class: 'badge' }, 'Offline mode'))
           : row('Password', 'Change the password used to sign in to this launcher.', pwBtn),
-        row('Membership', user?.tier === 'plus' ? 'BlackNight+ is active on this account.' : 'You are on the Standard plan.', membership)
+        row('Membership', user?.tier === 'plus' ? 'BlackNight+ is active on this account.' : 'You are on the Standard plan.', membership),
+        passkeyRow()
       ),
       group('Session', null, row('Sign out', 'Ends this session on this machine.', outBtn))
     ];
+  }
+
+  /**
+   * Passkeys, and an honest account of what they currently do.
+   *
+   * Three ways this can be unavailable and the row states the actual one. When
+   * it is available, the description still says that signing in with a passkey
+   * is not offered yet - because the server stores the credential but does not
+   * verify a signature, and a button implying otherwise would be worse than no
+   * button at all.
+   */
+  function passkeyRow() {
+    const state = BN.passkeys.status();
+
+    const button = el('button', { class: 'btn btn-ghost btn-sm' }, 'Add a passkey');
+    button.disabled = !state.ok;
+
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const result = await BN.passkeys.add();
+      button.disabled = false;
+
+      if (result.cancelled) return;
+      BN.ui.toast(
+        result.ok ? 'Passkey added' : 'Could not add a passkey',
+        result.ok ? 'It is stored, but sign-in still uses your password.' : result.error || '',
+        { kind: result.ok ? 'ok' : 'error' }
+      );
+    });
+
+    return row('Passkey', state.text, button);
   }
 
   /**

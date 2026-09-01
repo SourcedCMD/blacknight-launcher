@@ -33,14 +33,29 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `npm run check:budget`, a performance budget over the shipped source, checked
   in CI. The renderer has no build step and no dependencies; both are easy to
   give away one commit at a time.
+- **Passkey enrolment**, against the account service. Signing in with a passkey
+  is deliberately not offered: the server stores the credential but does not
+  yet verify a signature, and a button implying otherwise would be worse than
+  no button. The settings row says which of the three reasons applies.
+- `npm run art:snapshots`, recording what the art engine draws so a tweak to
+  one generator cannot silently change every title's key art.
 
 ### Changed
 - Key art is memoised, so re-rendering the library is a map lookup rather than
   a few thousand string concatenations per thumbnail.
+- Navigation, action buttons and status badges now resolve through the
+  translation catalogue instead of hardcoded English. Sixty-eight keys had been
+  defined and nineteen used; the visible chrome is migrated, and a test fails
+  the build if a referenced key does not exist.
+- The credential scanner in `npm run sync` reports line numbers, and has one
+  deliberate per-line escape hatch (`sync-allow-secret`) so it does not get
+  switched off wholesale the first time it is inconvenient.
 
 ### Fixed
 - A stray control character had got into `foreign.js` through a bad escape in a
   patch; the launcher-URL whitelist is now tested directly.
+- The styles added for the night map, session ghost and other-launcher cards
+  had been written to a stylesheet the page never loaded.
 
 ### Tests
 - 221 launcher tests, up from 161: the renderer's pure logic (formatters, the
@@ -48,6 +63,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   twenty-nine, plus the night map, ghost sessions and the foreign scanner.
 - 22 service tests, run in CI, against a real server on an ephemeral port —
   including the WebSocket relay through the browser's own client.
+- Art snapshots, verified to fail on a one-character change to a generator.
 
 
 ## [1.0.1] - 2026-09-01

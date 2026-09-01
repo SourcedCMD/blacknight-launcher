@@ -210,3 +210,52 @@ test('a handoff link encodes and carries a quiet zone', () => {
   assert.match(svg, /^<svg/);
   assert.ok(svg.length > 500, 'a real symbol, not an empty one');
 });
+
+/* --- Translation keys used by the UI ------------------------------------- */
+
+/**
+ * A key that does not exist renders as the key itself — `nav.gamez` sitting in
+ * the sidebar. That is a typo nobody catches in review and everybody sees in
+ * the product, so it is worth a test.
+ */
+test('every translation key the code references exists', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const root = path.join(__dirname, '..', 'src', 'js');
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.js') && entry.name !== 'i18n.js') files.push(full);
+    }
+  };
+  walk(root);
+
+  const missing = [];
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    // Literal keys only: an interpolated one cannot be checked from here.
+    for (const match of source.matchAll(/\bt\(\s*'([a-z][a-zA-Z]*\.[a-zA-Z]+)'/g)) {
+      if (BN.t(match[1]) === match[1]) missing.push(`${path.basename(file)}: ${match[1]}`);
+    }
+  }
+
+  assert.deepEqual(missing, [], 'these keys are used but not defined');
+});
+
+test('the nav keys the sidebar builds by hand all exist', () => {
+  // Built as `nav.${id}`, so the check above cannot see them.
+  for (const id of ['games', 'store', 'plus', 'downloads', 'settings']) {
+    assert.notEqual(BN.t(`nav.${id}`), `nav.${id}`, `nav.${id} is missing`);
+  }
+});
+
+test('no key resolves to an empty label', () => {
+  // An empty string is worse than a missing key: it renders as a blank button.
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'js', 'i18n.js'), 'utf8');
+  for (const match of source.matchAll(/^    '([^']+)':\s*'(.*)'/gm)) {
+    assert.ok(match[2].length > 0, `${match[1]} is empty`);
+  }
+});

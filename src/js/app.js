@@ -9,13 +9,9 @@
   const icon = BN.icon;
 
   const ROUTES = ['games', 'store', 'plus', 'downloads', 'settings', 'profile'];
-  const NAV = [
-    { id: 'games', label: 'Games' },
-    { id: 'store', label: 'Store' },
-    { id: 'plus', label: 'BlackNight+' },
-    { id: 'downloads', label: 'Downloads' },
-    { id: 'settings', label: 'Settings' }
-  ];
+  // Ids only. The label is looked up when the nav is built, so it is in
+  // whatever language is active then rather than the one at load.
+  const NAV = ['games', 'store', 'plus', 'downloads', 'settings'];
 
   let route = 'games';
   let sidebarCollapsed = false;
@@ -185,10 +181,10 @@
   function buildNav() {
     const host = $('#nav-links');
     host.innerHTML = '';
-    for (const item of NAV) {
-      const link = el('button', { class: 'nav-link', 'data-route': item.id });
-      link.innerHTML = `<span class="plus-flare"></span>${esc(item.label)}`;
-      link.addEventListener('click', () => go(item.id));
+    for (const id of NAV) {
+      const link = el('button', { class: 'nav-link', 'data-route': id });
+      link.innerHTML = `<span class="plus-flare"></span>${esc(BN.t(`nav.${id}`))}`;
+      link.addEventListener('click', () => go(id));
       host.appendChild(link);
     }
   }

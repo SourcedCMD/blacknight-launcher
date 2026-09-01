@@ -49,6 +49,9 @@ const DEFAULTS = {
   handheldMode: 'auto', // auto | on | off
   viewTransitions: true,
   attractMode: true,
+  // Empty until somebody deploys `server/`. While empty, passkey enrolment
+  // reports that there is nowhere to keep a credential rather than failing.
+  accountsUrl: '',
   // Off by default. Reads the install manifests Steam, Epic, GOG and Xbox
   // already wrote, so the library can show what is on the machine rather than
   // only what this launcher put there. Never leaves the machine.

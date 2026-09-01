@@ -668,6 +668,10 @@ function registerIpc() {
    * it should: this reads directories outside anything the launcher owns, and
    * the check belongs on the side that does the reading.
    */
+  const remoteAccounts = new (require('./services/accounts-remote').RemoteAccounts)(settings, log);
+  handle('account:passkey-challenge', (userId) => remoteAccounts.passkeyChallenge(userId));
+  handle('account:passkey-register', (payload) => remoteAccounts.passkeyRegister(payload));
+
   handle('library:foreign', () => {
     if (settings.get('detectOtherLaunchers') !== true) {
       return { games: [], errors: [], scannedAt: Date.now(), reason: 'not-enabled' };
