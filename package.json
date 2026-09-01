@@ -23,6 +23,7 @@
     "web": "node scripts/dev-server.js",
     "icon": "node scripts/make-icon.js",
     "og": "node scripts/make-og.js",
+    "publish-title": "node scripts/publish-title.js",
     "winget": "node scripts/make-winget.js",
     "check:catalog": "node scripts/check-catalog.js",
     "doctor": "node scripts/doctor.js",

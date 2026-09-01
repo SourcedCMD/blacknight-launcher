@@ -36,7 +36,10 @@ class Peers extends EventEmitter {
     this.settings = settings;
     this.log = log;
     this.library = library;
-    this.peers = new Map(); // id -> { id, host, port, titles, seenAt }
+    this.peers = new Map(); // id -> { id, host, port, titles, playing, seenAt }
+    // Set by the library so the announcement can carry it. A title and a
+    // start time, nothing that identifies the person at the keyboard.
+    this.playing = null;
     this.socket = null;
     this.server = null;
     this.timer = null;
@@ -147,6 +150,8 @@ class Peers extends EventEmitter {
           host: rinfo.address,
           port: message.port,
           titles: message.titles || [],
+          name: typeof message.name === 'string' ? message.name.slice(0, 24) : null,
+          playing: message.playing || null,
           seenAt: Date.now()
         });
         this.emit('changed', this.list());
@@ -184,7 +189,16 @@ class Peers extends EventEmitter {
   _announce() {
     if (!this.socket) return;
     const message = Buffer.from(
-      JSON.stringify({ app: 'blacknight', id: this.id, port: this.port, titles: this._titles() })
+      JSON.stringify({
+        app: 'blacknight',
+        id: this.id,
+        port: this.port,
+        titles: this._titles(),
+        // A machine name rather than an account: this is the household, not
+        // a social network, and nobody signed up to be discoverable.
+        name: this.settings.get('peerName') || null,
+        playing: this.settings.get('sharePlaying') === false ? null : this.playing
+      })
     );
     this.socket.send(message, 0, message.length, MULTICAST_PORT, MULTICAST_ADDR, (err) => {
       if (err) this.log?.debug('peers', 'Announce failed', err);
@@ -206,6 +220,64 @@ class Peers extends EventEmitter {
 
   list() {
     return [...this.peers.values()];
+  }
+
+  /**
+   * Called by the library when a session starts or ends.
+   *
+   * Announced immediately rather than at the next interval, so "Sam just
+   * started Tidebreaker" is actually news when it appears.
+   */
+  setPlaying(game, startedAt) {
+    this.playing = game ? { gameId: game.id, title: game.title, startedAt } : null;
+    if (this.socket) this._announce();
+  }
+
+  /**
+   * Reads a byte range of an installed build, for the WebRTC transport to
+   * send. Bounded and checked against the library, so a request cannot reach
+   * outside what is actually installed.
+   */
+  readRange(gameId, version, offset, length) {
+    try {
+      const entry = this.library?.store.get('entries')[gameId];
+      if (!entry || entry.status !== 'installed' || entry.version !== version) {
+        return { ok: false, error: 'not installed' };
+      }
+      // A ceiling, so one request cannot ask for a whole build in memory.
+      const want = Math.min(Number(length) || 0, 8 * 1024 * 1024);
+      if (want <= 0) return { ok: false, error: 'bad length' };
+
+      const file = require('path').join(entry.path, `${gameId}.pak`);
+      const size = fs.statSync(file).size;
+      const from = Math.max(0, Math.min(Number(offset) || 0, size));
+      const buffer = Buffer.alloc(Math.min(want, size - from));
+      if (!buffer.length) return { ok: false, error: 'past the end' };
+
+      const fd = fs.openSync(file, 'r');
+      try {
+        fs.readSync(fd, buffer, 0, buffer.length, from);
+      } finally {
+        fs.closeSync(fd);
+      }
+      return { ok: true, length: buffer.length, data: buffer.toString('base64') };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  /** Who on this network is in a game right now. */
+  nowPlaying() {
+    this._expire();
+    return [...this.peers.values()]
+      .filter((peer) => peer.playing)
+      .map((peer) => ({
+        peerId: peer.id,
+        name: peer.name || 'Another machine',
+        gameId: peer.playing.gameId,
+        title: peer.playing.title,
+        startedAt: peer.playing.startedAt
+      }));
   }
 
   /** A peer that has this exact build, or null. */

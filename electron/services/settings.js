@@ -21,6 +21,13 @@ const DEFAULTS = {
   // less transfer. Sharing touches the network, so it is opt-in.
   deltaPatching: true,
   lanSharing: false,
+  // Shown to other launchers on the same network, alongside what is playing.
+  peerName: '',
+  sharePlaying: true,
+  // Sharing beyond the local network needs somewhere for two launchers to
+  // exchange connection details. Empty means the whole feature stays dormant.
+  rendezvousUrl: '',
+  remoteSharing: false,
   peerId: '',
   keepPakOnUninstall: false,
   keepRollback: true,
@@ -41,6 +48,8 @@ const DEFAULTS = {
   overlayEnabled: false,
   handheldMode: 'auto', // auto | on | off
   viewTransitions: true,
+  attractMode: true,
+  evolvingArt: true,
   windowBounds: null,
   windowMaximized: false,
   launchOnStartup: false,

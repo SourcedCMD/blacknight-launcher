@@ -122,7 +122,7 @@
    * @param {number} opts.w      viewBox width
    * @param {number} opts.h      viewBox height
    */
-  function keyArt({ seed = 1, hue = 210, motif = 'city', w = 1600, h = 900, detail = 1 } = {}) {
+  function keyArt({ seed = 1, hue = 210, motif = 'city', w = 1600, h = 900, detail = 1, maturity = 0 } = {}) {
     const id = nextId();
     const r = rng(seed);
     const m = MOTIFS.includes(motif) ? motif : MOTIFS[Math.floor(r() * MOTIFS.length)];
@@ -139,7 +139,9 @@
 
     /* Stars ------------------------------------------------------------- */
     let stars = '';
-    const starCount = Math.round(120 * detail);
+    // A played-in title gains sky. The seed is unchanged, so it is the same
+    // place with more of it visible - not a different picture.
+    const starCount = Math.round(120 * detail * (1 + maturity * 0.9));
     for (let i = 0; i < starCount; i++) {
       const x = r() * w;
       const y = r() * horizon * 0.95;
@@ -417,5 +419,46 @@
   /** Square version of the same sky, for avatars. */
   const profileAvatar = (user, size = 96) => profileBanner(user, size, size);
 
-  BN.art = { logo, keyArt, hero, poster, thumb, banner, newsArt, profileBanner, profileAvatar, MOTIFS };
+  /**
+   * How far a title's art has grown, from 0 to 1.
+   *
+   * The generator is deterministic, so the same title always looks the same -
+   * which is right for a store and dull for a library. Feeding playtime in as
+   * a second term means a game you have lived in slowly gains stars, weather
+   * and depth, and nobody else's library looks like yours.
+   *
+   * Deliberately logarithmic: the first hour should be visible, and hour two
+   * hundred should not be a different game.
+   */
+  function maturity(game) {
+    const seconds = game?.playtimeSeconds || 0;
+    if (!seconds) return 0;
+    // ~50 hours reaches full growth.
+    return Math.min(1, Math.log10(1 + seconds / 3600) / Math.log10(51));
+  }
+
+  /**
+   * Key art for a title, grown by how much it has been played.
+   *
+   * Falls back to the plain generator when the setting is off, so the store
+   * always shows every player the same thing.
+   */
+  function livingArt(game, w, h, detail = 0.8) {
+    const grown = BN.state?.data?.settings?.evolvingArt === false ? 0 : maturity(game);
+    return keyArt({
+      seed: game.art.seed,
+      hue: game.art.hue,
+      motif: game.art.motif,
+      w,
+      h,
+      // More detail, and a slightly deeper sky, the longer it has been played.
+      detail: detail + grown * 0.45,
+      maturity: grown
+    });
+  }
+
+  BN.art = {
+    logo, keyArt, hero, poster, thumb, banner, newsArt,
+    profileBanner, profileAvatar, livingArt, maturity, MOTIFS
+  };
 })();

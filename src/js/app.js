@@ -159,6 +159,10 @@
     paintTimeOfDay();
     applyStreamerMode();
     applyHandheldMode();
+    BN.ambient?.initAttract();
+    paintNowPlaying();
+    // Peers announce every twenty seconds; matching that is enough.
+    setInterval(paintNowPlaying, 20000);
     BN.api.app.onQuickLaunch?.(() => quickLaunch());
     // A pad connecting is exactly when handheld mode should switch on.
     window.addEventListener('gamepadconnected', applyHandheldMode);
@@ -723,6 +727,48 @@
     } catch { /* the tray is cosmetic */ }
   }
 
+  /* --- Who else is playing ---------------------------------------------- */
+
+  /**
+   * Machines on this network that are in a game right now.
+   *
+   * No account system and no server: the peers already talk to each other for
+   * install sharing, and this is one more field in an announcement they were
+   * sending anyway.
+   */
+  async function paintNowPlaying() {
+    const host = $('#now-playing');
+    if (!host) return;
+
+    let playing = [];
+    try {
+      playing = await BN.api.peers.nowPlaying();
+    } catch {
+      playing = [];
+    }
+
+    if (!playing.length) {
+      host.innerHTML = '';
+      host.classList.add('hidden');
+      return;
+    }
+
+    host.classList.remove('hidden');
+    host.innerHTML = `<div class="side-title side-label">On your network</div>`;
+    for (const entry of playing) {
+      const since = Math.max(0, Math.round((Date.now() - entry.startedAt) / 60000));
+      const row = el('button', { class: 'side-item', 'data-tip': `${entry.name} is playing`, 'data-tip-side': 'bottom' });
+      row.innerHTML = `
+        <span class="side-thumb playing-dot"><i></i></span>
+        <span class="side-item-body side-label">
+          <span class="side-item-name">${esc(entry.title)}</span>
+          <span class="side-item-meta">${esc(entry.name)} \u00b7 ${since}m</span>
+        </span>`;
+      row.addEventListener('click', () => BN.components.openDetail(entry.gameId));
+      host.appendChild(row);
+    }
+  }
+
   /* --- Streaming and presentation modes --------------------------------- */
 
   /**
@@ -822,33 +868,11 @@
   ];
   let konamiAt = 0;
 
-  function testChamber() {
-    const seed = Math.floor(Math.random() * 1e9);
-    const motifs = BN.art.MOTIFS;
-    const motif = motifs[seed % motifs.length];
-
-    const body = el('div', { class: 'chamber' });
-    body.innerHTML = `
-      <div class="chamber-art">${BN.art.keyArt({ seed, hue: seed % 360, motif, w: 1200, h: 700, detail: 0.9 })}</div>
-      <div class="chamber-body">
-        <div class="chamber-eyebrow">Umbra engine</div>
-        <h2 class="chrome-text">Test chamber ${String(seed).slice(-4)}</h2>
-        <p>Nothing here is authored. Motif <b>${esc(motif)}</b>, seed <b>${esc(String(seed))}</b> &mdash;
-        the same generator that draws every poster in the store, turned up.</p>
-      </div>`;
-
-    BN.util.coverSvg(body.querySelector('.chamber-art'));
-    BN.sound?.play('boot');
-    BN.ui.modal({
-      title: 'You found it',
-      wide: true,
-      content: body,
-      footer: [
-        { label: 'Again', class: 'btn-ghost', onClick: ({ close }) => { close(); setTimeout(testChamber, 220); } },
-        { label: 'Back to the dark', class: 'btn-accent', onClick: ({ close }) => close() }
-      ]
-    });
-  }
+  /**
+   * The chamber used to be a generated picture of a room, which is a picture
+   * of a secret rather than a secret. It is now something you can play.
+   */
+  const testChamber = () => BN.chamber.open();
 
   function wireShortcuts() {
     document.addEventListener('keydown', (e) => {
@@ -890,7 +914,8 @@
 
   BN.app = {
     boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts,
-    checkGameUpdates, paintTimeOfDay, applyStreamerMode, applyHandheldMode, quickLaunch
+    checkGameUpdates, paintTimeOfDay, applyStreamerMode, applyHandheldMode, quickLaunch,
+    paintNowPlaying
   };
 
   document.addEventListener('DOMContentLoaded', () => {

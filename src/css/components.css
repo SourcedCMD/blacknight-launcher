@@ -1113,3 +1113,117 @@ kbd {
   font-size: 0.75rem;
   color: var(--text-faint);
 }
+
+/* --- Attract mode --------------------------------------------------------- */
+
+.attract {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  background: var(--bg);
+  opacity: 0;
+  transition: opacity 600ms ease;
+  pointer-events: none;
+  overflow: hidden;
+}
+.attract.on { opacity: 1; }
+.attract-art { position: absolute; inset: 0; opacity: 0.6; }
+.attract-art.in { animation: attract-drift 9s linear both; }
+.attract-art svg { width: 100%; height: 100%; display: block; }
+.attract::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--bg) 4%, transparent 55%),
+              linear-gradient(0deg, var(--bg) 6%, transparent 45%);
+}
+.attract-body {
+  position: absolute;
+  left: clamp(32px, 7vw, 110px);
+  bottom: clamp(70px, 16vh, 180px);
+  z-index: 2;
+  max-width: 46ch;
+}
+.attract-eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 14px;
+}
+.attract-title {
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 7vw, 5rem);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.attract-tagline { margin-top: 16px; color: var(--text-dim); font-size: 1.05rem; }
+.attract-hint {
+  position: absolute;
+  bottom: 26px;
+  right: 30px;
+  z-index: 2;
+  font-size: 0.68rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+@keyframes attract-drift {
+  from { transform: scale(1.04) translateX(0); opacity: 0; }
+  12% { opacity: 0.6; }
+  88% { opacity: 0.6; }
+  to { transform: scale(1.1) translateX(-1.5%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attract-art.in { animation: none; opacity: 0.6; }
+}
+
+/* --- Who else is playing -------------------------------------------------- */
+
+.now-playing { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 6px; }
+.playing-dot {
+  display: grid;
+  place-items: center;
+  background: var(--surface-sunk);
+}
+.playing-dot i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 12px var(--ok);
+  animation: pulse-soft 2.4s ease-in-out infinite;
+}
+@keyframes pulse-soft { 50% { opacity: 0.4; } }
+
+/* --- Earned accents ------------------------------------------------------- */
+
+.swatch.locked { opacity: 0.35; cursor: not-allowed; }
+.swatch.locked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    45deg, transparent, transparent 3px, rgba(255, 255, 255, 0.12) 3px, rgba(255, 255, 255, 0.12) 6px
+  );
+}
+
+/* --- Test chamber --------------------------------------------------------- */
+
+.chamber-game { display: flex; flex-direction: column; align-items: center; }
+.chamber-game canvas {
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  display: block;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: #05050a;
+  /* Nearest-neighbour would be wrong here, but so is blurring the motes. */
+  image-rendering: auto;
+}

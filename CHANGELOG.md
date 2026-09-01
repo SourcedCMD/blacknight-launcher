@@ -50,6 +50,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   inspector, and validates its own asar.
 - A winget manifest generator, and ESLint wired into CI and into sync.
 - Releases publish live rather than as an invisible draft.
+- `npm run publish-title`, which chunks and hashes a build and writes the
+  download url, digest and block manifest into the catalog. This is the step
+  that makes the whole download path real rather than simulated.
+- Multi-source downloads: byte ranges are shared across the origin and every
+  peer that has the build, reassigned as connections finish at different
+  speeds, degrading to the origin alone if every peer drops.
+- Who is playing right now on your network, from the announcement peers were
+  already sending.
+- Attract mode, art that grows with playtime, wallpaper export, and two
+  accents that have to be earned.
+- The year in review as a few seconds of video.
+- The test chamber is now something you can actually play.
+- A WebRTC transport for sharing beyond the local network.
 ## [1.0.0]
 
 First packaged release. Launcher shell, store, library, downloads with resume,

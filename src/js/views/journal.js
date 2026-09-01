@@ -154,6 +154,11 @@
       footer: [
         { label: BN.t('action.close'), class: 'btn-ghost', onClick: ({ close }) => close() },
         {
+          label: 'Save as video',
+          class: 'btn-ghost',
+          onClick: () => BN.reel.record(year)
+        },
+        {
           label: 'Save as image',
           class: 'btn-accent',
           onClick: ({ body: root }) => exportPoster(root.querySelector('#review-poster'), year)

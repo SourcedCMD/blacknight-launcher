@@ -58,6 +58,8 @@
     betaChannel: false, sendCrashReports: false, crashReportUrl: '', catalogUrl: '',
     windowMaterial: 'mica', globalHotkeyEnabled: true, globalHotkey: 'Control+Shift+Space',
     streamerMode: false, overlayEnabled: false, handheldMode: 'auto', viewTransitions: true,
+    attractMode: true, evolvingArt: true, peerName: '', sharePlaying: true,
+    rendezvousUrl: '', remoteSharing: false,
     lastRoute: 'games', autoCheckUpdates: true
     // peerId, windowBounds and windowMaximized are machine state, not
     // preferences, and mean nothing in a browser tab.
@@ -465,6 +467,8 @@
 
     peers: {
       async list() { return []; },
+      async nowPlaying() { return []; },
+      async readRange() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async status() { return { enabled: false, port: 0, peers: 0 }; },
       async setEnabled() { return { ok: false, reason: 'disabled' }; }
     },
@@ -511,6 +515,7 @@
       async registerIcon() { return false; },
       async setTrayIcon() { return false; },
       async savePoster() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async saveVideo() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async setProgress() {},
       async relaunch() { location.reload(); },
       async quit() {},

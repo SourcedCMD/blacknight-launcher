@@ -193,6 +193,37 @@
     ];
   }
 
+  /**
+   * The two accents that have to be earned.
+   *
+   * Shown locked rather than hidden: an accent nobody knows exists is not a
+   * reward, and the swatch says exactly what unlocks it.
+   */
+  function earnedAccents(swatches) {
+    BN.ambient.accentState().then((accents) => {
+      for (const accent of accents) {
+        const swatch = el('button', {
+          class: 'swatch' + (accent.unlocked ? '' : ' locked'),
+          role: 'radio',
+          'aria-checked': String(BN.state.data.settings.accent === accent.id),
+          'aria-label': accent.unlocked ? accent.label : accent.label + ' - locked',
+          'data-tip': accent.unlocked ? accent.label : accent.how,
+          disabled: !accent.unlocked,
+          style: { color: accent.color }
+        });
+        swatch.addEventListener('click', () => {
+          if (!accent.unlocked) {
+            BN.ui.toast(accent.label + ' is locked', accent.how, { kind: 'info', ms: 5000 });
+            return;
+          }
+          BN.state.setSettings({ accent: accent.id });
+          render();
+        });
+        swatches.append(swatch);
+      }
+    });
+  }
+
   function appearanceSection() {
     const swatches = el('div', { class: 'accent-swatches' });
     for (const accent of ACCENTS) {
@@ -211,6 +242,10 @@
       });
       swatches.append(swatch);
     }
+
+    // Appended after the six standard accents, so the earned ones read as
+    // something beyond the set rather than gaps in it.
+    earnedAccents(swatches);
 
     return [
       group('Theme', 'BlackNight is built for the dark. Pick the accent that carries it.', row('Accent colour', 'Used across highlights, progress and focus states.', swatches)),
@@ -235,6 +270,8 @@
           ['none', 'Solid']
         ]),
         toggle('viewTransitions', 'Animate between pages', 'Cross-fades when moving between Games, Store and the rest.'),
+        toggle('attractMode', 'Show a screensaver when idle', 'After a few quiet minutes the launcher becomes a dashboard.'),
+        toggle('evolvingArt', 'Let art grow with playtime', 'A title you have lived in gains sky the more you play it.'),
         select('handheldMode', 'Handheld layout', 'Larger controls and fewer columns, for a Deck or a small screen.', [
           ['auto', 'Automatic'],
           ['on', 'Always on'],
@@ -342,7 +379,9 @@
         toggle('deltaPatching', 'Patch updates block by block', 'An update transfers only the parts of a build that actually changed.'),
         toggle('keepPakOnUninstall', 'Keep game files after uninstalling', 'Reinstalling then costs a checksum pass instead of the whole download.'),
         toggle('keepRollback', 'Keep the previous build after an update', 'Lets a bad patch be rolled back in seconds instead of re-downloaded.'),
-        lanRow()
+        lanRow(),
+        toggle('sharePlaying', 'Show what I am playing on this network', 'Other launchers here see the title and how long, nothing else.'),
+        remoteRow()
       ),
       group('Data used', 'Counted per month, on this machine only.', usageRows()),
       group(
@@ -583,6 +622,46 @@
 
     paint({ enabled: false, peers: 0 });
     BN.api.peers.status().then(paint);
+    return node;
+  }
+
+  /**
+   * Sharing beyond the local network.
+   *
+   * Needs a rendezvous for two launchers to exchange connection details. With
+   * none configured the switch is disabled and the row says why, rather than
+   * offering something that cannot work.
+   */
+  function remoteRow() {
+    const node = el('div', { class: 'set-row' });
+
+    const paint = (status) => {
+      node.innerHTML = '';
+      const desc = !status.configured
+        ? 'No rendezvous is configured for this build, so this stays off.'
+        : status.connected
+          ? 'Connected. Builds can be shared with friends outside your network.'
+          : 'Waiting for the rendezvous.';
+
+      node.innerHTML = '<div class="grow"><div class="label">Share with friends anywhere</div>' +
+        '<div class="desc">' + esc(desc) + '</div></div>';
+
+      const control = el('div', { class: 'control' });
+      const box = el('button', {
+        class: 'switch',
+        role: 'switch',
+        'aria-checked': String(!!status.enabled),
+        'aria-label': 'Share with friends anywhere',
+        disabled: !status.configured
+      });
+      box.addEventListener('click', async () => {
+        paint(await BN.rendezvous.setEnabled(!status.enabled));
+      });
+      control.append(box);
+      node.append(control);
+    };
+
+    paint(BN.rendezvous.status());
     return node;
   }
 

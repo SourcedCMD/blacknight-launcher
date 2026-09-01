@@ -25,7 +25,9 @@ const BROWSER_GLOBALS = {
   AudioContext: 'readonly', webkitAudioContext: 'readonly', getComputedStyle: 'readonly',
   structuredClone: 'readonly', crypto: 'readonly', Notification: 'readonly',
   IntersectionObserver: 'readonly', ResizeObserver: 'readonly', Node: 'readonly',
-  MutationObserver: 'readonly', Audio: 'readonly', Gamepad: 'readonly'
+  MutationObserver: 'readonly', Audio: 'readonly', Gamepad: 'readonly',
+  devicePixelRatio: 'readonly', HTMLCanvasElement: 'readonly', MediaRecorder: 'readonly',
+  btoa: 'readonly', atob: 'readonly', RTCPeerConnection: 'readonly', WebSocket: 'readonly'
 };
 
 const NODE_GLOBALS = {

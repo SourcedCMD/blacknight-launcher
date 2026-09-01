@@ -251,6 +251,7 @@ function bootServices() {
   library.onSessionChange = (gameId, running) => {
     const game = catalog.games.find((g) => g.id === gameId);
     overlay.setPlaying(running ? game : null, Date.now());
+    peers.setPlaying(running ? game : null, Date.now());
 
     if (!running) {
       presence.clear();
@@ -663,6 +664,8 @@ function registerIpc() {
 
   /* LAN sharing --------------------------------------------------------- */
   handle('peers:list', () => peers.list());
+  handle('peers:now-playing', () => peers.nowPlaying());
+  handle('peers:read-range', (id, version, offset, length) => peers.readRange(id, version, offset, length));
   handle('peers:status', () => ({ enabled: peers.enabled, port: peers.port, peers: peers.list().length }));
   handle('peers:set-enabled', (on) => peers.setEnabled(on));
 
@@ -691,6 +694,22 @@ function registerIpc() {
       return { ok: true, path: picked.filePath };
     } catch (err) {
       log.warn('review', 'Could not save the poster', err);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  handle('app:save-video', async (dataUrl, suggested) => {
+    try {
+      const picked = await dialog.showSaveDialog(win, {
+        defaultPath: path.join(app.getPath('videos'), suggested || 'BlackNight.webm'),
+        filters: [{ name: 'WebM video', extensions: ['webm'] }]
+      });
+      if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+      const base64 = String(dataUrl).replace(/^data:video\/webm;base64,/, '');
+      fs.writeFileSync(picked.filePath, Buffer.from(base64, 'base64'));
+      return { ok: true, path: picked.filePath };
+    } catch (err) {
+      log.warn('reel', 'Could not save the reel', err);
       return { ok: false, error: err.message };
     }
   });

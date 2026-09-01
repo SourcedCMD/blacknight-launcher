@@ -53,6 +53,8 @@ electron/            Main process
     catalog.js       Remote slate and news, with the bundled copy as fallback
     overlay.js       Now-playing browser source for OBS
     handoff.js       Moves a setup to another machine over the LAN
+    multisource.js   Scheduling one download across several sources
+    achievements.js  Local achievements, earned from play history
     chunks.js        Block-level delta patching: manifests, diffs, plans
     peers.js         LAN peer install over multicast discovery
     achievements.js  Local achievements, earned from play history
@@ -73,6 +75,10 @@ src/                 Renderer (classic scripts, dependency-ordered in index.html
     diagnostics.js   Catches renderer errors and reports them to the log
     i18n.js          Translation layer; English bundled
     qr.js            QR encoding, for the handoff link
+    ambient.js       Attract mode, wallpaper, earned accents
+    reel.js          The year in review, recorded as video
+    chamber.js       The playable test chamber
+    rendezvous.js    WebRTC peers beyond the local network
     views/journal.js Play journal, session insights, year in review
     views/achievements.js  Achievements, channels, rollback, recovery
     views/           games, store, plus, downloads, settings, profile
@@ -95,6 +101,7 @@ test/
   chunks.test.js         Delta patching, peer tokens, journal, year in review
   channels.test.js       Channels, rollback, recovery, usage, achievements
   qr.test.js             Reed-Solomon and QR layout invariants
+  multisource.test.js    Range scheduling, peer failure, degradation
 
 build/
   icons/             PNG masters, 16–256px

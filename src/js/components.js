@@ -249,7 +249,7 @@
 
     body.innerHTML = `
       <div class="detail-hero">
-        <div class="art">${BN.art.hero(game)}</div>
+        <div class="art">${BN.art.livingArt(game, 1800, 780, 0.8)}</div>
         <div class="body">
           <div class="row wrap" style="gap:8px;margin-bottom:10px">${statusBadge(game)}<span class="badge">${esc(game.rating)}</span>${game.genre.map((g) => `<span class="badge">${esc(g)}</span>`).join('')}</div>
           <h2 class="display" style="font-size:2.1rem">${esc(game.title)}</h2>
@@ -435,7 +435,11 @@
       revert.innerHTML = `${icon('refresh')} Roll back an update`;
       revert.addEventListener('click', () => BN.views.achievements.offerRollback(game.id));
 
-      manage.append(verify, options, channel, revert, remove);
+      const paper = el('button', { class: 'btn btn-ghost btn-sm btn-block' });
+      paper.innerHTML = `${icon('image')} Save as wallpaper`;
+      paper.addEventListener('click', () => BN.ambient.wallpaper(game.id));
+
+      manage.append(verify, options, channel, revert, paper, remove);
     }
 
     paintFitVerdict(body, game.id);
@@ -463,7 +467,7 @@
 
     const layer = el('div', { class: 'ritual' });
     layer.innerHTML = `
-      <div class="ritual-art">${BN.art.hero(game)}</div>
+      <div class="ritual-art">${BN.art.livingArt(game, 1800, 780, 0.9)}</div>
       <div class="ritual-body">
         <div class="ritual-eyebrow">Starting</div>
         <div class="ritual-title chrome-text">${esc(game.title)}</div>

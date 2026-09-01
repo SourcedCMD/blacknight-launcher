@@ -129,6 +129,8 @@ contextBridge.exposeInMainWorld('blacknight', {
 
   peers: {
     list: () => call('peers:list'),
+    nowPlaying: () => call('peers:now-playing'),
+    readRange: (id, version, offset, length) => call('peers:read-range', id, version, offset, length),
     status: () => call('peers:status'),
     setEnabled: (on) => call('peers:set-enabled', on)
   },
@@ -158,6 +160,7 @@ contextBridge.exposeInMainWorld('blacknight', {
     registerIcon: (dataUrl) => call('app:register-icon', dataUrl),
     setTrayIcon: (dataUrl) => call('app:set-tray-icon', dataUrl),
     savePoster: (dataUrl, name) => call('app:save-poster', dataUrl, name),
+    saveVideo: (dataUrl, name) => call('app:save-video', dataUrl, name),
     setProgress: (value) => call('app:set-progress', value),
     relaunch: () => call('app:relaunch'),
     quit: () => call('app:quit'),
