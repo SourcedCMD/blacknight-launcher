@@ -21,6 +21,22 @@
    * would keep whatever language was active then. Falls back to the raw status
    * so an unrecognised one is visible rather than blank.
    */
+  /**
+   * Age ratings, spelled out.
+   *
+   * The letter alone means nothing to most people outside the region that
+   * issued it, and showing a content rating is a requirement in several
+   * markets once a store is actually selling.
+   */
+  const RATING_NAMES = {
+    E: 'Everyone',
+    E10: 'Everyone 10+',
+    T: 'Teen',
+    M: 'Mature 17+',
+    AO: 'Adults Only 18+',
+    RP: 'Rating Pending'
+  };
+
   const STATUS_KEY = {
     released: 'status.released',
     preorder: 'status.preorder',
@@ -75,6 +91,11 @@
     const action = primaryAction(game);
     switch (action.key) {
       case 'play': {
+        // Checked before the launch rather than after it fails: a game that
+        // exits instantly with no window is the single most baffling failure
+        // a player can hit, and this is usually why.
+        if (!(await prerequisitesSatisfied(game))) break;
+
         if (node) BN.fx.burst(node);
         const ritual = launchRitual(game);
         const result = await BN.state.launch(game.id);
@@ -84,6 +105,10 @@
           // Their own history, shown once the launch has actually taken.
           setTimeout(() => BN.views.journal?.noteBeforeLaunch(game.id), 2600);
           if (BN.state.data.settings.exitOnGameLaunch) setTimeout(() => BN.api.app.quit(), 1200);
+        } else if (result.canVerify) {
+          // A launch that failed because files are missing has exactly one
+          // useful next step, so it is offered rather than described.
+          offerVerify(game, result.error);
         } else {
           BN.ui.toast('Could not launch', result.error, { kind: 'error' });
         }
@@ -308,6 +333,7 @@
             <div class="panel" style="padding:18px">
               <dl class="kv">
                 <dt>Status</dt><dd>${esc(statusLabel(game.status))}</dd>
+                ${game.rating ? `<dt>Rated</dt><dd><span class="rating-badge">${esc(game.rating)}</span> ${esc(RATING_NAMES[game.rating] || '')}</dd>` : ''}
                 <dt>Release</dt><dd>${esc(date(game.releaseDate))}${days ? ` (${days}d)` : ''}</dd>
                 <dt>Developer</dt><dd>${esc(game.developer)}</dd>
                 <dt>Publisher</dt><dd>${esc(game.publisher)}</dd>
@@ -549,6 +575,96 @@
    * The main process has always supported keeping saves; nothing ever passed
    * the flag, so the choice was made silently on the player's behalf.
    */
+  /**
+   * Warns about missing runtimes, and offers to install what the build shipped.
+   *
+   * Returns false only when the person chooses to stop. A missing prerequisite
+   * never blocks a launch on its own: the detection is best-effort, plenty of
+   * machines already have these under a name this does not check, and refusing
+   * to start somebody's game over a guess would be worse than the problem.
+   */
+  async function prerequisitesSatisfied(game) {
+    let missing = [];
+    try {
+      missing = await BN.api.library.prerequisites(game.id);
+    } catch {
+      return true; // never let the check itself stop a launch
+    }
+    if (!missing.length) return true;
+
+    const installable = missing.filter((m) => m.installer);
+    const names = missing.map((m) => m.name).join(', ');
+
+    if (!installable.length) {
+      // Nothing shipped to fix it with, so this is a warning and nothing more.
+      BN.ui.toast(
+        'This machine may be missing a runtime',
+        `${names}. If ${game.title} does not start, installing that is usually why.`,
+        { kind: 'info', ms: 10000 }
+      );
+      return true;
+    }
+
+    const choice = await BN.ui.confirm({
+      title: 'Install a required runtime?',
+      message:
+        `${game.title} needs ${names}, which does not appear to be installed.\n\n` +
+        'The installer that came with the game can set it up now. It is Microsoft\u2019s own, ' +
+        'it affects the whole machine, and Windows will ask for permission.',
+      confirmLabel: 'Install it',
+      cancelLabel: 'Start anyway'
+    });
+
+    if (!choice) return true; // "Start anyway" is a real answer
+
+    for (const item of installable) {
+      BN.ui.toast('Installing', item.name, { kind: 'info' });
+      const result = await BN.api.library.installPrerequisite(game.id, item.installer);
+      BN.ui.toast(
+        result.ok ? 'Installed' : 'Could not install',
+        result.ok
+          ? result.rebootRequired
+            ? `${item.name} is installed. Windows wants a restart to finish.`
+            : item.name
+          : result.error || `The installer exited with code ${result.code}.`,
+        { kind: result.ok ? 'ok' : 'error', ms: 9000 }
+      );
+    }
+    return true;
+  }
+
+  /**
+   * Offers to check the files.
+   *
+   * Used when a launch fails because something is missing, and after a crash.
+   * Both have the same cause often enough - an interrupted download, a file an
+   * antivirus quarantined, a disk that filled - and the same fix. Describing
+   * the problem and leaving somebody to find Verify in a menu is how a
+   * launcher earns a reputation for being broken.
+   */
+  async function offerVerify(game, message) {
+    const ok = await BN.ui.confirm({
+      title: `${game.title} could not start`,
+      message: `${message || 'Its files look incomplete.'}\n\nChecking the files will find anything missing and download just that part.`,
+      confirmLabel: 'Verify files',
+      cancelLabel: 'Not now'
+    });
+    if (!ok) return;
+
+    BN.ui.toast('Checking files', `${game.title} - this can take a few minutes.`, { kind: 'info' });
+    const result = await BN.state.verify(game.id);
+
+    BN.ui.toast(
+      result?.ok ? 'Files checked' : 'Could not check the files',
+      result?.ok
+        ? result.repaired
+          ? 'Something was missing and has been queued to download again.'
+          : result.summary || 'Everything that was checked is present.'
+        : result?.error || '',
+      { kind: result?.ok ? 'ok' : 'error', ms: 8000 }
+    );
+  }
+
   async function confirmUninstall(game) {
     const body = el('div');
     body.innerHTML = `
@@ -935,6 +1051,6 @@
 
   BN.components = {
     primaryAction, runAction, actionButton, statusLine, statusBadge, priceTag,
-    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, launchRitual, statusLabel
+    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, launchRitual, statusLabel, offerVerify
   };
 })();

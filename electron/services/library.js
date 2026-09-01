@@ -113,6 +113,9 @@ class Library {
         lastPlayed: entry?.lastPlayed || null,
         favorite: !!entry?.favorite,
         running: this.sessions.has(game.id),
+        // When it was acquired and what it cost then, for the purchase list.
+        addedAt: entry?.addedAt || null,
+        paidUsd: typeof entry?.paidUsd === 'number' ? entry.paidUsd : null,
         download
       };
     });
@@ -162,6 +165,17 @@ class Library {
     const entry = this._entry(gameId);
     entry.owned = true;
     if (entry.status === 'not-installed') entry.status = 'owned';
+
+    // What it cost at the time, recorded once. A title acquired free stays
+    // free in the record even if it is sold later, and a price that changes
+    // afterwards does not rewrite what somebody actually paid.
+    if (entry.paidUsd === undefined) {
+      const sale = game.price?.sale ?? 0;
+      const list = game.price?.usd ?? 0;
+      entry.paidUsd = sale > 0 ? Math.round(list * (1 - sale) * 100) / 100 : list;
+      entry.addedAt = entry.addedAt || Date.now();
+    }
+
     this.store.save();
     return { ok: true, library: this.list() };
   }
@@ -1057,14 +1071,37 @@ class Library {
 
     const exe = entry.executable || path.join(entry.path, `${gameId}.exe`);
     if (!fs.existsSync(exe)) {
-      // The demo ships as data only until a real build is dropped in; record
-      // the session anyway so playtime and Recently Played stay honest.
-      this._beginSession(gameId, null);
+      /**
+       * No executable is a failure, and it is reported as one.
+       *
+       * This used to open a session and accrue playtime for a game that never
+       * ran, on the reasoning that the demo ships as data until a build is
+       * dropped in. That is a development convenience, and shipped it is a
+       * launcher telling somebody their game is running when it is not - the
+       * exact class of lie this codebase has spent its life removing.
+       *
+       * The simulation is still available, but only when the launcher was
+       * explicitly built to allow it, and it is labelled.
+       */
+      if (this.allowSimulated) {
+        this._beginSession(gameId, null);
+        return {
+          ok: true,
+          simulated: true,
+          message: `${game.title} started in simulation - there is no executable at ${exe}.`,
+          library: this.list()
+        };
+      }
+
+      this.log?.warn('launch', `${gameId}: no executable at ${exe}`);
       return {
-        ok: true,
-        simulated: true,
-        message: `${game.title} launched. No executable found at ${exe} - drop the game build there to start the real process.`,
-        library: this.list()
+        ok: false,
+        reason: 'missing-executable',
+        error: `${game.title} could not start: its files are incomplete.`,
+        // The renderer offers this as the next step, because it is the one
+        // that actually fixes a missing or truncated install.
+        canVerify: true,
+        path: exe
       };
     }
 
@@ -1103,8 +1140,17 @@ class Library {
 
     // Uploaded after the local snapshot below, and never awaited: a slow or
     // unreachable service must not hold up the end of a session.
+    //
+    // A conflict is the one outcome that must not be swallowed. The server
+    // refuses the overwrite and names both versions; somebody has to be told,
+    // or the refusal has protected the save and lost it to silence instead.
     setTimeout(() => {
-      this.cloudSaves?.push(gameId).catch(() => {});
+      this.cloudSaves
+        ?.push(gameId)
+        .then((result) => {
+          if (result?.conflict) this.onSaveConflict?.(gameId, result.conflict);
+        })
+        .catch(() => { /* offline, which is ordinary and not worth a dialog */ });
     }, 1500);
     const entry = this._entry(gameId);
     const seconds = Math.round((Date.now() - session.startedAt) / 1000);

@@ -231,12 +231,18 @@ function bootServices() {
   migrateInstallDir();
 
   auth = new Auth(dataDir);
-  downloader = new Downloader(dataDir, settings);
+  downloader = new Downloader(dataDir, settings, log);
   library = new Library(dataDir, catalog, downloader, settings, { allowSimulated: !app.isPackaged });
   // Attached rather than constructor-injected so the Library keeps working
   // untouched in tests, where nothing should be beating at anything.
   library.presenceCount = new (require('./services/presence-count').PresenceCount)(settings, log);
   library.cloudSaves = new (require('./services/cloudsaves').CloudSaves)(library, settings, log);
+
+  // A save conflict is the user's decision to make, so it goes to the window.
+  library.onSaveConflict = (gameId, conflict) => {
+    log.info('saves', `${gameId}: conflict, asking`);
+    if (win && !win.isDestroyed()) win.webContents.send('saves:conflict', { gameId, conflict });
+  };
   updates = new Updates({
     packaged: app.isPackaged,
     autoCheck: settings.get('autoCheckUpdates') !== false,
@@ -694,6 +700,28 @@ function registerIpc() {
   const remoteAccounts = new (require('./services/accounts-remote').RemoteAccounts)(settings, log);
   handle('account:passkey-challenge', (userId) => remoteAccounts.passkeyChallenge(userId));
   handle('account:passkey-register', (payload) => remoteAccounts.passkeyRegister(payload));
+  /**
+   * Runtimes a title needs that the machine does not have.
+   *
+   * The install directory comes from the library rather than the renderer, so
+   * a compromised page cannot point the installer search somewhere else.
+   */
+  handle('library:prerequisites', (gameId) => {
+    const entry = library.store.get('entries')[gameId];
+    if (!entry?.path) return [];
+    return require('./services/prerequisites').check(entry.path);
+  });
+
+  handle('library:install-prerequisite', async (gameId, installerPath) => {
+    const entry = library.store.get('entries')[gameId];
+    if (!entry?.path) return { ok: false, error: 'That title is not installed.' };
+    const result = await require('./services/prerequisites').install(installerPath, entry.path);
+    log.info('prereq', `${gameId}: ${path.basename(String(installerPath))} -> ${result.ok ? 'ok' : result.error || result.code}`);
+    return result;
+  });
+
+  handle('downloads:reorder', (id, direction) => downloader.reorder(id, direction));
+
   handle('saves:cloud-status', () => library.cloudSaves.status());
   handle('saves:cloud-check', (gameId) => library.cloudSaves.check(gameId));
   handle('saves:cloud-push', (gameId) => library.cloudSaves.push(gameId));

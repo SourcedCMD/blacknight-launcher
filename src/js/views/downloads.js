@@ -107,7 +107,13 @@
         <div class="progress${item.status === 'paused' ? ' paused' : ''}" data-progress><i style="width:${(item.progress * 100).toFixed(2)}%"></i></div>
         <div class="dl-stats" style="margin-top:9px">
           <span data-received><b>${esc(bytes(item.receivedBytes))}</b> of ${esc(bytes(item.totalBytes))}</span>
-          <span data-speed>${item.status === 'downloading' ? esc(speed(item.speedBps)) : '--'}</span>
+          <span data-speed>${
+            item.status === 'downloading'
+              ? esc(speed(item.speedBps))
+              : item.status === 'retrying'
+                ? 'reconnecting'
+                : '--'
+          }</span>
           <span data-eta>${item.status === 'downloading' ? esc(duration(item.etaSeconds)) + ' left' : ''}</span>
           <span class="grow" style="text-align:right" data-pct>${Math.round(item.progress * 100)}%</span>
         </div>
@@ -121,9 +127,34 @@
       return b;
     };
 
+    // Reordering, for anything that has not started. An in-flight transfer is
+    // left alone: stopping it to promote something else throws away whatever
+    // it was part-way through.
+    if (['queued', 'paused', 'retrying'].includes(item.status)) {
+      controls.appendChild(
+        button('Move up', 'chevronUp', 'btn-ghost btn-icon', async () => {
+          await BN.api.downloads.reorder(item.id, 'up');
+          await BN.state.refreshDownloads();
+        })
+      );
+      controls.appendChild(
+        button('Move down', 'chevronDown', 'btn-ghost btn-icon', async () => {
+          await BN.api.downloads.reorder(item.id, 'down');
+          await BN.state.refreshDownloads();
+        })
+      );
+      controls.appendChild(
+        button('Download this first', 'chevronsUp', 'btn-ghost btn-icon', async () => {
+          await BN.api.downloads.prioritise(item.id);
+          await BN.state.refreshDownloads();
+          BN.ui.toast('Moved to the front', item.title, { kind: 'ok' });
+        })
+      );
+    }
+
     if (item.status === 'downloading' || item.status === 'queued') {
       controls.appendChild(button('Pause', 'pause', 'btn-ghost', () => BN.state.downloadAction('pause', item.id)));
-    } else if (item.status === 'paused' || item.status === 'failed') {
+    } else if (item.status === 'paused' || item.status === 'failed' || item.status === 'retrying') {
       controls.appendChild(button('Resume', 'play', 'btn-accent', () => BN.state.downloadAction('resume', item.id)));
     }
 

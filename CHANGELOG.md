@@ -8,6 +8,49 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **Downloads are retried instead of abandoned.** A dropped connection used to
+  mark a transfer failed and stop, stranding a 90 GB download until somebody
+  noticed and pressed resume. Five attempts with growing backoff, only for
+  failures that could come right — a 404 or a checksum mismatch still stops at
+  once. Pausing cancels a pending retry; resuming by hand resets the budget.
+- **A launch that cannot happen is reported as a failure.** With no executable
+  present, `launch()` returned success, opened a session and accrued playtime
+  for a game that never ran. It now fails and offers to verify the files. The
+  old behaviour remains only in builds explicitly made with simulation on.
+- **Save conflicts are shown.** The server has refused overwriting saves since
+  it was written, and the launcher was swallowing the refusal in an empty
+  catch — protecting the save and then losing it to silence. There is now a
+  dialog naming both versions, with no default answer.
+- A stray control character in the art-snapshot id normaliser made that test
+  fail roughly one run in ten; the script also ran its CLI when imported,
+  printing a table of hashes into the test output.
+- `prioritise()` moved a download to index 0, displacing a transfer that was
+  already part-way through a file. It now inserts ahead of the first item that
+  has not started.
+
+### Added
+- **Library search, sort and filter** — by name, playtime, size, recency, and
+  installed/owned/wishlisted/never-played. The store had all three; the screen
+  people actually live in had none.
+- **Queue reordering**: move up, move down, and download this one first.
+- **Prerequisite checks** for the Visual C++ runtime, .NET and DirectX, with an
+  offer to run the installer the build shipped. Only ever an installer from
+  inside the title's own directory, always asked for, and never a hard block.
+- **Empty states** that say why a list is empty and offer the one action that
+  would fix it, rather than a line of grey text.
+- **Purchase history** — what you own, when it arrived, and what it cost at the
+  time, recorded when a title is acquired. Stated plainly as the launcher's own
+  record rather than a payment receipt.
+- **Age ratings** shown on a title, spelled out rather than left as a letter.
+- **A bug report that carries its own diagnostics**, copied to the clipboard so
+  the reporter can read exactly what they are about to share.
+- Website and support links, which were empty — there was no route from a
+  broken install to a human being.
+- Prices are formatted for the reader's locale, and a discounted price is
+  rounded to whole cents rather than carrying floating-point noise.
+
+
 ### Added
 - **Rate limiting and account lockout** on the services. Sign-in hashes with
   scrypt, which is expensive by design — without a ceiling that endpoint is

@@ -221,3 +221,93 @@ test('reclaimable puts never-played titles first', () => {
   assert.equal(list.length, 2);
   assert.equal(list[0].gameId, 'past', 'never played should be offered up first');
 });
+
+/* --- Retrying a failed transfer ------------------------------------------ */
+
+test('a network failure is retried rather than abandoned', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  const downloader = new Downloader(dir, settings);
+
+  const item = downloader.enqueue({
+    gameId: 'demo', title: 'Demo', totalBytes: 1000, installDir: dir, url: 'http://example.invalid/x.pak'
+  });
+
+  downloader._fail(downloader._find(item.id), 'socket hang up');
+
+  const after = downloader._find(item.id);
+  assert.equal(after.status, 'retrying', 'not failed');
+  assert.equal(after.attempts, 1);
+  assert.ok(after.retryAt > Date.now(), 'and it is scheduled');
+  assert.match(after.error, /retrying \(1\/5\)/, 'and says so');
+
+  downloader.cancel(item.id);
+});
+
+test('it gives up after the attempt budget, and says how many', () => {
+  const dir = tmpDir();
+  const downloader = new Downloader(dir, createSettings(dir));
+  const item = downloader.enqueue({
+    gameId: 'demo', title: 'Demo', totalBytes: 1000, installDir: dir, url: 'http://example.invalid/x.pak'
+  });
+
+  for (let i = 0; i <= Downloader.MAX_ATTEMPTS; i++) {
+    downloader._fail(downloader._find(item.id), 'socket hang up');
+  }
+
+  const after = downloader._find(item.id);
+  assert.equal(after.status, 'failed');
+  assert.match(after.error, /gave up after 5 attempts/);
+
+  downloader.cancel(item.id);
+});
+
+test('a failure that will never come right is not retried', () => {
+  // A static classification, so no instance is needed.
+  for (const [message, retried] of [
+    ['socket hang up', true],
+    ['ETIMEDOUT', true],
+    ['Server responded 500', true],
+    ['Server responded 503', true],
+    ['Server responded 429', true],
+    ['Server responded 404', false],
+    ['Server responded 403', false],
+    ['Server responded 401', false],
+    ['That file failed its checksum', false],
+    ['ENOSPC: no space left on device', false]
+  ]) {
+    assert.equal(Downloader.retryable(message), retried, `${message} should ${retried ? '' : 'not '}retry`);
+  }
+});
+
+test('the backoff climbs and then holds', () => {
+  const waits = [0, 1, 2, 3, 4, 10].map((n) => Downloader.backoffMs(n));
+  for (let i = 1; i < 4; i++) assert.ok(waits[i] > waits[i - 1], 'it climbs');
+  assert.equal(waits[4], waits[5], 'and caps rather than growing forever');
+  assert.ok(waits[5] <= 120000, 'and never waits more than a couple of minutes');
+});
+
+test('pausing a retry stops it, and resuming resets the budget', () => {
+  const dir = tmpDir();
+  const downloader = new Downloader(dir, createSettings(dir));
+  const item = downloader.enqueue({
+    gameId: 'demo', title: 'Demo', totalBytes: 1000, installDir: dir, url: 'http://example.invalid/x.pak'
+  });
+
+  downloader._fail(downloader._find(item.id), 'socket hang up');
+  downloader._fail(downloader._find(item.id), 'socket hang up');
+  assert.equal(downloader._find(item.id).attempts, 2);
+
+  downloader.pause(item.id);
+  assert.equal(downloader._find(item.id).status, 'paused');
+  assert.equal(downloader._find(item.id).retryAt, null);
+
+  downloader.resume(item.id);
+  const after = downloader._find(item.id);
+  // The pump picks it straight back up, so it is already moving rather than
+  // sitting in the queue.
+  assert.ok(['queued', 'downloading'].includes(after.status), `resumed to ${after.status}`);
+  assert.equal(after.attempts, 0, 'asking by hand means the person thinks the network is back');
+
+  downloader.cancel(item.id);
+});

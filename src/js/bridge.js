@@ -329,11 +329,14 @@
       },
       async ghost() { return null; },
       async foreign() { return { games: [], errors: [], scannedAt: Date.now(), reason: 'not-enabled' }; },
+      async prerequisites() { return []; },
+      async installPrerequisite() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async cloudStatus() { return { ok: false, reason: 'not-configured' }; },
       async cloudCheck() { return { ok: false, reason: 'not-configured' }; },
       async cloudPush() { return { ok: false, reason: 'not-configured' }; },
       async cloudPull() { return { ok: false, reason: 'not-configured' }; },
       async cloudUsage() { return { ok: false, reason: 'not-configured' }; },
+      onSaveConflict() { return () => {}; },
       async saveBackups() { return []; },
       async backupSaves() { return { ok: false, reason: 'no-saves' }; },
       async restoreSave() { return { ok: false, error: 'Not available in the browser preview.' }; },
@@ -420,6 +423,20 @@
     },
 
     downloads: {
+      async reorder(id, direction) {
+        const movable = (d) => ['queued', 'retrying', 'paused'].includes(d.status);
+        const from = db.downloads.findIndex((x) => x.id === id);
+        if (from === -1 || !movable(db.downloads[from])) return listDownloads();
+
+        const step = direction === 'up' ? -1 : 1;
+        let to = from + step;
+        while (to >= 0 && to < db.downloads.length && !movable(db.downloads[to])) to += step;
+        if (to < 0 || to >= db.downloads.length) return listDownloads();
+
+        db.downloads.splice(to, 0, db.downloads.splice(from, 1)[0]);
+        save(); fire('changed', listDownloads());
+        return listDownloads();
+      },
       async list() { return listDownloads(); },
       async pause(id) {
         const d = db.downloads.find((x) => x.id === id);

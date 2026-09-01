@@ -210,8 +210,18 @@
 
         <section class="section" data-reveal>
           <div class="section-head">
-            <div><h2>The BlackNight slate</h2><div class="sub">${library.length} titles in development and release</div></div>
-            <button class="btn btn-sm btn-ghost" id="games-see-store">${icon('store')} Open store</button>
+            <div><h2>The BlackNight slate</h2><div class="sub" id="slate-count">${library.length} titles in development and release</div></div>
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <input class="input input-sm lib-search" id="lib-search" type="search"
+                     placeholder="Search your library…" aria-label="Search your library" spellcheck="false">
+              <select class="select select-sm" id="lib-sort" aria-label="Sort by">
+                ${SORTS.map((o) => `<option value="${o.id}">${esc(o.label)}</option>`).join('')}
+              </select>
+              <select class="select select-sm" id="lib-filter" aria-label="Filter">
+                ${LIB_FILTERS.map((o) => `<option value="${o.id}">${esc(o.label)}</option>`).join('')}
+              </select>
+              <button class="btn btn-sm btn-ghost" id="games-see-store">${icon('store')} Open store</button>
+            </div>
           </div>
           <div class="grid stagger" id="slate-grid"></div>
         </section>
@@ -243,8 +253,37 @@
     const news = view.querySelector('#rail-news');
     for (const item of catalog.news) news.appendChild(BN.components.newsCard(item, catalog.games));
 
-    const grid = view.querySelector('#slate-grid');
-    for (const game of library) grid.appendChild(BN.components.gameCard(game));
+    // The grid is painted through the controls from the start, so there is one
+    // path rather than an initial render and a separate filtered one.
+    const search = view.querySelector('#lib-search');
+    const sortBox = view.querySelector('#lib-sort');
+    const filterBox = view.querySelector('#lib-filter');
+
+    sortBox.value = librarySort;
+    filterBox.value = libraryFilter;
+    search.value = libraryQuery;
+
+    paintSlate(view);
+
+    search.addEventListener('input', () => {
+      libraryQuery = search.value.trim().toLowerCase();
+      paintSlate(view);
+    });
+    search.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !search.value) return;
+      e.stopPropagation();
+      search.value = '';
+      libraryQuery = '';
+      paintSlate(view);
+    });
+    sortBox.addEventListener('change', () => {
+      librarySort = sortBox.value;
+      paintSlate(view);
+    });
+    filterBox.addEventListener('change', () => {
+      libraryFilter = filterBox.value;
+      paintSlate(view);
+    });
 
     view.querySelectorAll('[data-rail]').forEach((btn) =>
       btn.addEventListener('click', () => {
@@ -256,6 +295,153 @@
     view.querySelector('#games-see-store')?.addEventListener('click', () => BN.app.go('store'));
 
     BN.fx.reveal(view);
+  }
+
+  /**
+   * How the library can be ordered.
+   *
+   * "Recently played" leads because it is what somebody opening a launcher is
+   * usually looking for, and it is the order every other list in the app
+   * already uses.
+   */
+  const SORTS = [
+    { id: 'recent', label: 'Recently played', compare: (a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0) },
+    { id: 'name', label: 'Name', compare: (a, b) => a.title.localeCompare(b.title) },
+    { id: 'playtime', label: 'Most played', compare: (a, b) => (b.playtimeSeconds || 0) - (a.playtimeSeconds || 0) },
+    { id: 'size', label: 'Largest', compare: (a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0) },
+    { id: 'added', label: 'Recently added', compare: (a, b) => (b.addedAt || 0) - (a.addedAt || 0) }
+  ];
+
+  const LIB_FILTERS = [
+    { id: 'all', label: 'Everything', test: () => true },
+    { id: 'installed', label: 'Installed', test: (g) => g.installed },
+    { id: 'owned', label: 'Owned', test: (g) => g.owned },
+    { id: 'notInstalled', label: 'Not installed', test: (g) => g.owned && !g.installed },
+    { id: 'favorite', label: 'Wishlisted', test: (g) => g.favorite },
+    { id: 'unplayed', label: 'Never played', test: (g) => g.installed && !(g.playtimeSeconds > 0) }
+  ];
+
+  let librarySort = 'recent';
+  let libraryFilter = 'all';
+  let libraryQuery = '';
+
+  /**
+   * Matching is on the things people actually type.
+   *
+   * Title, developer and genre. Not the description: searching prose turns
+   * every query into a fuzzy match against everything, which feels broken in a
+   * list this size.
+   */
+  function matches(game, query) {
+    if (!query) return true;
+    return [game.title, game.developer, game.genre, ...(game.tags || [])]
+      .filter(Boolean)
+      .some((field) => String(field).toLowerCase().includes(query));
+  }
+
+  /**
+   * What to show when there is nothing to show.
+   *
+   * An empty grid with a line of grey text is the least useful thing a
+   * launcher can do, and it is the first thing a brand-new user sees. Each
+   * case here says why it is empty and offers the one action that would fix
+   * it, because "no results" and "you own nothing yet" are different problems
+   * with different answers.
+   */
+  function emptyState({ query, filter }) {
+    const wrap = el('div', { class: 'empty-state' });
+
+    const cases = {
+      search: {
+        icon: 'search',
+        title: `Nothing matches “${query}”`,
+        body: 'Try a shorter search, or clear it to see everything again.',
+        action: { label: 'Clear search', run: () => {
+          libraryQuery = '';
+          const box = document.getElementById('lib-search');
+          if (box) box.value = '';
+          paintSlate(document.getElementById('view-games'));
+        } }
+      },
+      installed: {
+        icon: 'download',
+        title: 'Nothing is installed yet',
+        body: 'Titles you install appear here, ready to play offline.',
+        action: { label: 'Open the store', run: () => BN.app.go('store') }
+      },
+      owned: {
+        icon: 'library',
+        title: 'You do not own anything yet',
+        body: 'Everything you get is kept here, on this machine, and yours to reinstall whenever you like.',
+        action: { label: 'Open the store', run: () => BN.app.go('store') }
+      },
+      favorite: {
+        icon: 'heart',
+        title: 'Nothing wishlisted',
+        body: 'Wishlist a title and the launcher will tell you the moment it is out.',
+        action: { label: 'Open the store', run: () => BN.app.go('store') }
+      },
+      unplayed: {
+        icon: 'checkCircle',
+        title: 'Nothing waiting',
+        body: 'Everything you have installed, you have played. That is rarer than it sounds.',
+        action: null
+      },
+      default: {
+        icon: 'grid',
+        title: 'Nothing here',
+        body: 'No titles match that filter.',
+        action: { label: 'Show everything', run: () => {
+          libraryFilter = 'all';
+          const box = document.getElementById('lib-filter');
+          if (box) box.value = 'all';
+          paintSlate(document.getElementById('view-games'));
+        } }
+      }
+    };
+
+    const shape = query ? cases.search : cases[filter] || cases.default;
+
+    wrap.innerHTML = `
+      <span class="empty-mark">${icon(shape.icon)}</span>
+      <h3>${esc(shape.title)}</h3>
+      <p>${esc(shape.body)}</p>`;
+
+    if (shape.action) {
+      const button = el('button', { class: 'btn btn-sm btn-accent' }, shape.action.label);
+      button.addEventListener('click', shape.action.run);
+      wrap.append(button);
+    }
+    return wrap;
+  }
+
+  function paintSlate(view) {
+    const grid = view.querySelector('#slate-grid');
+    const count = view.querySelector('#slate-count');
+    if (!grid) return;
+
+    const rule = LIB_FILTERS.find((f) => f.id === libraryFilter) || LIB_FILTERS[0];
+    const order = SORTS.find((o) => o.id === librarySort) || SORTS[0];
+
+    const shown = BN.state.data.library
+      .filter(rule.test)
+      .filter((game) => matches(game, libraryQuery))
+      .sort(order.compare);
+
+    grid.innerHTML = '';
+
+    if (!shown.length) {
+      grid.append(emptyState({ query: libraryQuery, filter: libraryFilter }));
+    } else {
+      for (const game of shown) grid.appendChild(BN.components.gameCard(game));
+    }
+
+    if (count) {
+      const total = BN.state.data.library.length;
+      count.textContent = shown.length === total
+        ? `${total} titles in development and release`
+        : `${shown.length} of ${total} titles`;
+    }
   }
 
   function libraryRow(game) {
@@ -361,6 +547,9 @@
   BN.views.games = {
     render,
     renderForeign,
+    paintSlate,
+    SORTS,
+    LIB_FILTERS,
     onEnter: startRotation,
     onLeave: stopRotation,
     libraryRow

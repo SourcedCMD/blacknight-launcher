@@ -171,6 +171,13 @@
     // Peers announce every twenty seconds; matching that is enough.
     setInterval(paintNowPlaying, 20000);
     BN.session?.start();
+
+    // A save conflict interrupts, because it is the one thing here that is
+    // genuinely urgent and genuinely the player's call.
+    BN.api.library.onSaveConflict?.(({ gameId, conflict }) => {
+      const game = BN.state.game(gameId);
+      if (game) BN.views.saveConflict.open(game, conflict);
+    });
     BN.api.app.onQuickLaunch?.(() => quickLaunch());
     // A pad connecting is exactly when handheld mode should switch on.
     window.addEventListener('gamepadconnected', applyHandheldMode);
@@ -675,6 +682,7 @@
       { group: 'Actions', label: 'Your year in the dark', icon: 'sparkles', keywords: 'review wrapped stats year', run: () => BN.views.journal.yearInReview() },
       { group: 'Actions', label: 'Share your library', icon: 'share', keywords: 'share library page export html', run: () => BN.views.libraryShare.open() },
       { group: 'Actions', label: 'Your backlog', icon: 'clock', keywords: 'backlog unplayed never started waiting', run: () => BN.views.insights.openBacklog() },
+      { group: 'Actions', label: 'What you own', icon: 'library', keywords: 'purchases receipts history owned bought', run: () => BN.views.purchases.open() },
       { group: 'Actions', label: "What's new", icon: 'info', keywords: 'changelog release notes whats new version', run: () => BN.views.transfer.whatsNew() },
       { group: 'Actions', label: 'When you play', icon: 'clock', keywords: 'night map heatmap hours journal when', run: () => BN.views.journal.open() },
       { group: 'Account', label: 'Sign out', icon: 'logout', run: signOut }

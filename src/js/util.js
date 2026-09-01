@@ -80,8 +80,38 @@
     return `${h.toFixed(1)} hours played`;
   }
 
-  const money = (usd) =>
-    usd === 0 ? 'Free' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(usd);
+  /**
+   * Prices, in a currency and format the reader recognises.
+   *
+   * The catalogue quotes USD, which is the only price that actually exists.
+   * Everything else here is presentation: the number is formatted for the
+   * reader's locale so a European sees `69,99 $US` rather than `$69.99`, and
+   * the currency stays USD because converting it would be inventing a price
+   * nobody is going to charge.
+   *
+   * When real regional pricing exists it belongs in the catalogue, per title,
+   * and this becomes a lookup. Guessing an exchange rate in the client would
+   * be worse than showing an honest dollar figure.
+   */
+  const money = (usd, { currency = 'USD', locale = undefined } = {}) => {
+    if (usd === 0) return 'Free';
+    try {
+      return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(usd);
+    } catch {
+      // An unknown currency code should not take out a price tag.
+      return `$${Number(usd).toFixed(2)}`;
+    }
+  };
+
+  /** What a title actually costs today, sale included. */
+  const priceOf = (game) => {
+    const list = game?.price?.usd ?? 0;
+    const sale = game?.price?.sale ?? 0;
+    // Rounded to cents. A discount computed in floating point gives numbers
+    // like 52.49249999999999, and a price is not a place for that.
+    const now = sale > 0 ? Math.round(list * (1 - sale) * 100) / 100 : list;
+    return { list, now, sale, discounted: sale > 0, saved: Math.round((list - now) * 100) / 100 };
+  };
 
   /** Parses a value as a date, treating bare YYYY-MM-DD as local rather than
    *  UTC - otherwise a release date can display as the previous day. */
@@ -219,9 +249,22 @@
    * destination is simply not offered - the launcher never ships a link that
    * goes nowhere.
    */
+  /**
+   * Where the launcher can send somebody.
+   *
+   * These were all empty, which meant a person with a broken install had no
+   * route to a human being at all - and once the store takes money, terms and
+   * privacy stop being optional in several places this ships.
+   *
+   * The GitHub ones are real today. The rest stay empty until those pages
+   * exist, and anything empty is simply not shown rather than rendered as a
+   * dead link.
+   */
   const LINKS = {
-    website: '',
-    support: '',
+    website: 'https://sourcedcmd.github.io/blacknight-launcher',
+    support: 'https://github.com/SourcedCMD/blacknight-launcher/issues',
+    // A bug report with the diagnostics already attached.
+    reportBug: 'https://github.com/SourcedCMD/blacknight-launcher/issues/new',
     careers: '',
     terms: '',
     privacy: ''
@@ -261,7 +304,7 @@
   BN.util = {
     coverSvg,
     $, $$, el, esc, frag, link, hasLink,
-    bytes, speed, duration, playtime, money, date, relative, countdown,
+    bytes, speed, duration, playtime, money, priceOf, date, relative, countdown,
     clamp, lerp, sleep, debounce, throttle, rng, hashString, initials, countTo,
     bus
   };

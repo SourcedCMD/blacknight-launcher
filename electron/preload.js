@@ -83,11 +83,14 @@ contextBridge.exposeInMainWorld('blacknight', {
     yearInReview: (year) => call('library:year-in-review', year),
     playMap: (options) => call('library:play-map', options),
     foreign: () => call('library:foreign'),
+    prerequisites: (gameId) => call('library:prerequisites', gameId),
+    installPrerequisite: (gameId, installerPath) => call('library:install-prerequisite', gameId, installerPath),
     cloudStatus: () => call('saves:cloud-status'),
     cloudCheck: (gameId) => call('saves:cloud-check', gameId),
     cloudPush: (gameId) => call('saves:cloud-push', gameId),
     cloudPull: (gameId, versionId) => call('saves:cloud-pull', gameId, versionId),
     cloudUsage: () => call('saves:cloud-usage'),
+    onSaveConflict: (handler) => on('saves:conflict', handler),
     ghost: (gameId) => call('library:ghost', gameId),
     saveBackups: (id) => call('library:save-backups', id),
     backupSaves: (id) => call('library:backup-saves', id),
@@ -109,6 +112,7 @@ contextBridge.exposeInMainWorld('blacknight', {
     clearFinished: () => call('downloads:clear-finished'),
     onProgress: (handler) => on('downloads:progress', handler),
     onChanged: (handler) => on('downloads:changed', handler),
+    reorder: (id, direction) => call('downloads:reorder', id, direction),
     onCompleted: (handler) => on('downloads:completed', handler)
   },
 

@@ -25,11 +25,23 @@ const SPEED_WINDOW = 8; // samples kept for the smoothed speed readout
  * crash or a reboot resumes from the byte it reached rather than from zero.
  */
 class Downloader extends EventEmitter {
-  constructor(dir, settings) {
+  /**
+   * How many times a transfer is picked back up before it is called failed.
+   *
+   * Five, spread over roughly three minutes of backoff. Enough to ride out a
+   * router reboot or a lift, not so many that a genuinely dead URL keeps a
+   * queue busy for an hour.
+   */
+  static MAX_ATTEMPTS = 5;
+
+  constructor(dir, settings, log = null) {
     super();
     this.settings = settings;
+    this.log = log;
     this.store = new Store(dir, 'downloads', { items: [] });
     this.active = new Map(); // id -> runtime handle (never persisted)
+    // Pending retries, so pausing or cancelling can stop one before it fires.
+    this.retryTimers = new Map();
     this.timer = null;
     this.windowTimer = null;
     // Set by the library while a game is running, so transfers can get out of
@@ -37,8 +49,14 @@ class Downloader extends EventEmitter {
     this.gameRunning = false;
 
     // Anything caught mid-flight by a shutdown comes back as paused, not broken.
+    // A retry that was pending when the process died is put back in the queue:
+    // the wait it was serving has certainly elapsed by now.
     for (const item of this.store.get('items')) {
       if (item.status === 'downloading' || item.status === 'verifying') item.status = 'paused';
+      if (item.status === 'retrying') {
+        item.status = 'queued';
+        item.retryAt = null;
+      }
     }
     this.store.save();
   }
@@ -98,7 +116,13 @@ class Downloader extends EventEmitter {
       status: 'queued',
       addedAt: Date.now(),
       completedAt: null,
-      error: null
+      error: null,
+      // How many times this has been picked back up after a network failure,
+      // and when the next attempt is due. Both survive a restart, so a machine
+      // that reboots mid-retry does not start the count again.
+      attempts: 0,
+      retryAt: null,
+      lastError: null
     };
     items.push(item);
     this.store.save();
@@ -109,7 +133,9 @@ class Downloader extends EventEmitter {
 
   pause(id) {
     const item = this._find(id);
-    if (!item || !['downloading', 'queued'].includes(item.status)) return this.list();
+    if (!item || !['downloading', 'queued', 'retrying'].includes(item.status)) return this.list();
+    this._clearRetry(id);
+    item.retryAt = null;
     this._stopRuntime(id);
     item.status = 'paused';
     this.store.save();
@@ -120,10 +146,69 @@ class Downloader extends EventEmitter {
 
   resume(id) {
     const item = this._find(id);
-    if (!item || !['paused', 'failed'].includes(item.status)) return this.list();
+    if (!item || !['paused', 'failed', 'retrying'].includes(item.status)) return this.list();
+    this._clearRetry(id);
     item.status = 'queued';
     item.error = null;
+    item.retryAt = null;
+    // Asking for it by hand resets the budget: the person watching has decided
+    // the network is back, and they are usually right.
+    item.attempts = 0;
     this.store.save();
+    this.emit('changed', this.list());
+    this._pump();
+    return this.list();
+  }
+
+  /**
+   * Moves an item within the queue.
+   *
+   * The pump takes work in list order, so the order of the array *is* the
+   * queue. Reordering is therefore a splice rather than a priority field that
+   * something else has to remember to sort by.
+   *
+   * Only queued and retrying items move. Something already downloading stays
+   * where it is: stopping a transfer to start a different one throws away
+   * whatever the first was part-way through, which is a bad trade for a
+   * position in a list.
+   */
+  reorder(id, direction) {
+    const items = this.store.get('items');
+    const from = items.findIndex((i) => i.id === id);
+    if (from === -1) return this.list();
+
+    const movable = (item) => ['queued', 'retrying', 'paused'].includes(item.status);
+    if (!movable(items[from])) return this.list();
+
+    const step = direction === 'up' ? -1 : 1;
+    let to = from + step;
+    // Skip past anything that cannot be displaced.
+    while (to >= 0 && to < items.length && !movable(items[to])) to += step;
+    if (to < 0 || to >= items.length) return this.list();
+
+    const [moved] = items.splice(from, 1);
+    items.splice(to, 0, moved);
+
+    this.store.set('items', items);
+    this.emit('changed', this.list());
+    this._pump();
+    return this.list();
+  }
+
+  /** Puts an item at the head of the queue, ahead of anything else waiting. */
+  prioritise(id) {
+    const items = this.store.get('items');
+    const from = items.findIndex((i) => i.id === id);
+    if (from === -1) return this.list();
+    if (!['queued', 'retrying', 'paused'].includes(items[from].status)) return this.list();
+
+    // In front of the first item that has not started, so an in-flight
+    // transfer is not displaced.
+    const first = items.findIndex((i) => ['queued', 'retrying', 'paused'].includes(i.status));
+    const [moved] = items.splice(from, 1);
+    items.splice(Math.max(0, first), 0, moved);
+
+    this.store.set('items', items);
     this.emit('changed', this.list());
     this._pump();
     return this.list();
@@ -132,6 +217,7 @@ class Downloader extends EventEmitter {
   cancel(id) {
     const item = this._find(id);
     if (!item) return this.list();
+    this._clearRetry(id);
     this._stopRuntime(id);
     try {
       if (fs.existsSync(item.file)) fs.unlinkSync(item.file);
@@ -148,19 +234,6 @@ class Downloader extends EventEmitter {
       this.store.get('items').filter((i) => i.status !== 'completed')
     );
     this.emit('changed', this.list());
-    return this.list();
-  }
-
-  /** Move an item to the front of the queue. */
-  prioritise(id) {
-    const items = this.store.get('items');
-    const idx = items.findIndex((i) => i.id === id);
-    if (idx > 0) {
-      const [item] = items.splice(idx, 1);
-      items.unshift(item);
-      this.store.save();
-      this.emit('changed', this.list());
-    }
     return this.list();
   }
 
@@ -502,13 +575,89 @@ class Downloader extends EventEmitter {
     }
   }
 
+  /**
+   * Failures worth trying again.
+   *
+   * A dropped connection, a socket timeout, a 5xx or a 429 are all things that
+   * are usually different a minute later. A 404 or a 403 is not: the file is
+   * not there, or this client is not allowed to have it, and retrying that is
+   * just a slower way to fail.
+   */
+  static retryable(message) {
+    const text = String(message || '');
+    if (/^Server responded (?:4(?:0[0-9]|1[0-8]))/.test(text)) return false; // 400-418, minus 429
+    if (/checksum|integrity|not enough space|ENOSPC|EACCES|EPERM/i.test(text)) return false;
+    return true;
+  }
+
+  /**
+   * Backoff between attempts, in milliseconds.
+   *
+   * Climbs quickly to a couple of minutes and stops there. A 90 GB download is
+   * a long-running thing and the network being out for five minutes is
+   * ordinary; a client that gives up on the first blip is a client that never
+   * finishes a large file on a domestic connection.
+   */
+  static backoffMs(attempt) {
+    const schedule = [5000, 15000, 45000, 120000];
+    return schedule[Math.min(attempt, schedule.length - 1)];
+  }
+
   _fail(item, message) {
     this._stopRuntime(item.id, { keepStatus: true });
+
+    item.lastError = message;
+
+    if (Downloader.retryable(message) && item.attempts < Downloader.MAX_ATTEMPTS) {
+      const wait = Downloader.backoffMs(item.attempts);
+      item.attempts++;
+      item.status = 'retrying';
+      item.retryAt = Date.now() + wait;
+      // The message says what is happening rather than only what went wrong,
+      // because a user watching a progress bar wants to know if it is over.
+      item.error = `${message} - retrying (${item.attempts}/${Downloader.MAX_ATTEMPTS})`;
+
+      this.log?.info('downloads', `${item.gameId}: ${message}; attempt ${item.attempts} in ${Math.round(wait / 1000)}s`);
+
+      this.store.save();
+      this.emit('changed', this.list());
+
+      const timer = setTimeout(() => {
+        this.retryTimers.delete(item.id);
+        const current = this._find(item.id);
+        // Only if nobody paused or cancelled it in the meantime.
+        if (current?.status !== 'retrying') return;
+        current.status = 'queued';
+        current.retryAt = null;
+        this.store.save();
+        this.emit('changed', this.list());
+        this._pump();
+      }, wait);
+      timer.unref?.();
+      this.retryTimers.set(item.id, timer);
+
+      this._pump();
+      return;
+    }
+
     item.status = 'failed';
-    item.error = message;
+    item.retryAt = null;
+    item.error = item.attempts
+      ? `${message} - gave up after ${item.attempts} attempt${item.attempts === 1 ? '' : 's'}`
+      : message;
+
+    this.log?.warn('downloads', `${item.gameId} failed: ${item.error}`);
     this.store.save();
     this.emit('changed', this.list());
     this._pump();
+  }
+
+  /** Stops a pending retry, for pause and cancel. */
+  _clearRetry(id) {
+    const timer = this.retryTimers.get(id);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.retryTimers.delete(id);
   }
 
   _stopRuntime(id, { keepStatus = false } = {}) {

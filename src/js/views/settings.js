@@ -1127,8 +1127,45 @@
     const entries = [
       ['Website', 'website'],
       ['Support', 'support'],
-      ['Careers', 'careers']
+      ['Careers', 'careers'],
+      ['Terms', 'terms'],
+      ['Privacy', 'privacy']
     ].filter(([, key]) => BN.util.hasLink(key));
+
+    /**
+     * A bug report with the details already in it.
+     *
+     * "What version are you on, what OS, what does the log say" is the first
+     * three round trips of every support conversation. Copying that to the
+     * clipboard before opening the issue page removes all three - and it is
+     * copied rather than sent, so the person can read exactly what they are
+     * about to share.
+     */
+    if (BN.util.hasLink('reportBug')) {
+      const report = el('button', { class: 'btn btn-sm btn-ghost' });
+      report.innerHTML = `${icon('alert')} Report a problem`;
+      report.addEventListener('click', async () => {
+        const lines = [
+          `Launcher: ${appInfo?.version || 'unknown'}`,
+          `Electron: ${appInfo?.electron || 'n/a'} (Chromium ${appInfo?.chrome || 'n/a'})`,
+          `Platform: ${appInfo?.platform || ''} ${appInfo?.arch || ''}`,
+          `Catalogue: ${BN.state.data.catalog.games.length} titles, source ${BN.state.data.catalog.source || 'bundled'}`,
+          `Installed: ${BN.state.installedGames().length}`,
+          '',
+          'What happened:',
+          '',
+          'What I expected:',
+          ''
+        ];
+        await BN.api.app.copy?.(lines.join('\n'));
+        BN.ui.toast('Details copied', 'Paste them into the report — nothing was sent automatically.', {
+          kind: 'ok',
+          ms: 8000,
+          action: { label: 'Open', onClick: () => BN.api.app.openExternal(BN.util.link('reportBug')) }
+        });
+      });
+      node.append(el('div', { class: 'row', style: { justifyContent: 'center', paddingBottom: '10px' } }, report));
+    }
 
     if (entries.length) {
       const links = el('div', { class: 'row', style: { gap: '8px', justifyContent: 'center', padding: '0 22px 26px' } });

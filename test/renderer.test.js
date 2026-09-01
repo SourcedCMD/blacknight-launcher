@@ -129,7 +129,7 @@ test('a registered locale overrides only what it defines', () => {
  * one page cannot capture each other's `url(#...)` references. That id is
  * random by design, so determinism is a claim about the geometry.
  */
-const geometry = (svg) => svg.replace(/bn[a-z0-9]{4,10}-/g, 'id-');
+const geometry = (svg) => svg.replace(/bn[a-z0-9]+-/g, 'id-');
 
 test('the same title always draws the same art', () => {
   const options = { seed: 7331, hue: 212, motif: 'city', w: 400, h: 300, detail: 0.8 };

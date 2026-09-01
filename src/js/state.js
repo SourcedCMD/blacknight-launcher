@@ -187,7 +187,11 @@
     const featured = state.library.filter((g) => g.featured);
     return featured.length ? featured : state.library.slice(0, 3);
   };
-  const activeDownloads = () => state.downloads.filter((d) => ['downloading', 'queued', 'paused'].includes(d.status));
+  // A transfer waiting out a backoff is still active: it has a partial file on
+  // disk and it is coming back. Leaving it out would make the titlebar pill
+  // vanish during a blip, which reads as the download having stopped.
+  const activeDownloads = () =>
+    state.downloads.filter((d) => ['downloading', 'queued', 'paused', 'retrying'].includes(d.status));
 
   /** Aggregate progress across the queue, for the titlebar pill + taskbar. */
   function queueProgress() {

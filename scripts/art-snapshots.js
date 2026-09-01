@@ -29,7 +29,10 @@ const BN = global.window.BN;
 const FILE = path.join(__dirname, '..', 'test', 'art-snapshots.json');
 
 /** Ids are random per call by design, so they are normalised away. */
-const geometry = (svg) => svg.replace(/bn[a-z0-9]{4,10}-/g, 'id-');
+// One or more, not {4,10}: nextId() concatenates two base-36 numbers and the
+// random half can be a single character, so a short id escaped the old pattern
+// and the two calls hashed differently roughly one run in a hundred.
+const geometry = (svg) => svg.replace(/bn[a-z0-9]+-/g, 'id-');
 const digest = (svg) => crypto.createHash('sha256').update(geometry(svg)).digest('hex').slice(0, 16);
 
 function current() {
@@ -53,13 +56,21 @@ function current() {
   return out;
 }
 
-const now = current();
+/**
+ * Only when run directly.
+ *
+ * This file is also required by the snapshot test, and a module that prints a
+ * table of hashes every time it is imported makes test output unreadable.
+ */
+if (require.main === module) {
+  const now = current();
 
-if (process.argv.includes('--write')) {
-  fs.writeFileSync(FILE, `${JSON.stringify(now, null, 2)}\n`, 'utf8');
-  console.log(`Wrote ${Object.keys(now).length} snapshots to test/art-snapshots.json`);
-} else {
-  for (const [key, hash] of Object.entries(now)) console.log(`  ${key.padEnd(20)} ${hash}`);
+  if (process.argv.includes('--write')) {
+    fs.writeFileSync(FILE, `${JSON.stringify(now, null, 2)}\n`, 'utf8');
+    console.log(`Wrote ${Object.keys(now).length} snapshots to test/art-snapshots.json`);
+  } else {
+    for (const [key, hash] of Object.entries(now)) console.log(`  ${key.padEnd(20)} ${hash}`);
+  }
 }
 
 module.exports = { current, digest, geometry };
