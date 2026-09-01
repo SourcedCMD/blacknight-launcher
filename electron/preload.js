@@ -52,7 +52,10 @@ contextBridge.exposeInMainWorld('blacknight', {
   // is dormant until `accountsUrl` points somewhere.
   account: {
     passkeyChallenge: (userId) => call('account:passkey-challenge', userId),
-    passkeyRegister: (payload) => call('account:passkey-register', payload)
+    passkeyRegister: (payload) => call('account:passkey-register', payload),
+    passkeyLoginChallenge: () => call('account:passkey-login-challenge'),
+    passkeyLogin: (payload) => call('account:passkey-login', payload),
+    passkeyRemove: (token, credentialId) => call('account:passkey-remove', token, credentialId)
   },
 
   library: {

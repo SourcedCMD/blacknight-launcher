@@ -283,7 +283,10 @@
     // Dormant in the browser preview, the same as an unconfigured launcher.
     account: {
       async passkeyChallenge() { return { ok: false, reason: 'not-configured' }; },
-      async passkeyRegister() { return { ok: false, reason: 'not-configured' }; }
+      async passkeyRegister() { return { ok: false, reason: 'not-configured' }; },
+      async passkeyLoginChallenge() { return { ok: false, reason: 'not-configured' }; },
+      async passkeyLogin() { return { ok: false, reason: 'not-configured' }; },
+      async passkeyRemove() { return { ok: false, reason: 'not-configured' }; }
     },
 
     catalog: {

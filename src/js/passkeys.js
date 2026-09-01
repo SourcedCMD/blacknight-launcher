@@ -1,32 +1,25 @@
 /* =========================================================================
    Passkeys.
 
-   The honest state of this, stated plainly because the alternative is a
-   switch that lies:
+   Both halves work now: the server parses the attestation, checks the
+   signature against the stored key, pins the challenge and the origin, and
+   refuses a signature counter that goes backwards.
 
-   Registration works end to end where the platform provides WebAuthn — the
-   browser creates a credential, and the server stores its id and public key.
+   What is still true and worth saying: attestation statements are not
+   verified, so this does not prove which make of authenticator created a
+   credential. That check needs a trust store of vendor roots, and for signing
+   somebody into their own launcher account it buys nothing — the security is
+   in the signature, not the brand of the key.
 
-   Sign-in with a passkey is deliberately NOT offered. Verifying an assertion
-   means parsing CBOR and checking a signature against the stored key, and the
-   server says in its own comments that this belongs behind a reviewed library
-   rather than being improvised. Until that exists, a "sign in with a passkey"
-   button could only either fail or accept anything — and the second is worse
-   than not having the button.
-
-   So this enrols, reports what it can do, and says the rest out loud.
+   The remaining limitation is the runtime. Electron loading from file:// does
+   not provide WebAuthn, so in the packaged launcher today `available()` is
+   false and the UI says so rather than offering a button that throws.
    ========================================================================= */
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
 
-  /**
-   * Whether this runtime can create a passkey at all.
-   *
-   * Electron loading from file:// does not provide WebAuthn, so in the
-   * packaged launcher this is false today and the UI says so rather than
-   * offering a button that throws.
-   */
+  /** Whether this runtime can create or use a passkey at all. */
   function available() {
     return (
       typeof navigator !== 'undefined' &&
@@ -47,22 +40,27 @@
    */
   function status() {
     if (!configured()) {
-      return { ok: false, reason: 'not-configured', text: 'No account service is configured, so there is nowhere to keep a passkey.' };
+      return {
+        ok: false,
+        reason: 'not-configured',
+        text: 'No account service is configured, so there is nowhere to keep a passkey.'
+      };
     }
     if (!available()) {
-      return { ok: false, reason: 'unsupported', text: 'This build cannot create passkeys — the launcher window does not provide WebAuthn.' };
+      return {
+        ok: false,
+        reason: 'unsupported',
+        text: 'This build cannot use passkeys — the launcher window does not provide WebAuthn.'
+      };
     }
-    return {
-      ok: true,
-      text: 'You can add a passkey. Signing in with one is not available yet: the server stores it but does not yet verify a signature.'
-    };
+    return { ok: true, text: 'Add a passkey and you can sign in with it instead of a password.' };
   }
 
-  const base64url = (buffer) =>
+  const b64u = (buffer) =>
     btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-  const fromBase64url = (text) => {
-    const padded = text.replace(/-/g, '+').replace(/_/g, '/');
+  const fromB64u = (text) => {
+    const padded = String(text).replace(/-/g, '+').replace(/_/g, '/');
     const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
     return Uint8Array.from(binary, (c) => c.charCodeAt(0));
   };
@@ -70,9 +68,10 @@
   /**
    * Enrols a passkey for the signed-in account.
    *
-   * The challenge comes from the server and goes back with the credential, so
-   * a stored passkey is at least tied to a challenge the server issued —
-   * which is the part that is meaningful without full verification.
+   * The whole attestation goes to the server, which is what lets it verify
+   * rather than take the browser's word for the key. Nothing is extracted or
+   * interpreted here: a client that pre-digests what the server is meant to
+   * check is a client the server has to trust.
    */
   async function add() {
     const state = status();
@@ -82,13 +81,13 @@
     if (!user) return { ok: false, error: 'Sign in first.' };
 
     try {
-      const challenge = await BN.api.account.passkeyChallenge?.(user.id);
-      if (!challenge?.challenge) return { ok: false, error: 'The server did not issue a challenge.' };
+      const issued = await BN.api.account.passkeyChallenge(user.id);
+      if (!issued?.challenge) return { ok: false, error: issued?.error || 'The server did not issue a challenge.' };
 
       const credential = await navigator.credentials.create({
         publicKey: {
-          challenge: fromBase64url(challenge.challenge),
-          rp: { name: 'BlackNight Studios', id: challenge.rpId },
+          challenge: fromB64u(issued.challenge),
+          rp: { name: 'BlackNight Studios', id: issued.rpId },
           user: {
             id: Uint8Array.from(user.id, (c) => c.charCodeAt(0)),
             name: user.email || user.handle,
@@ -106,21 +105,73 @@
 
       if (!credential) return { ok: false, error: 'No passkey was created.' };
 
-      const saved = await BN.api.account.passkeyRegister?.({
+      const saved = await BN.api.account.passkeyRegister({
         userId: user.id,
-        credentialId: credential.id,
-        publicKey: base64url(credential.response.getPublicKey?.() || new ArrayBuffer(0)),
-        challenge: challenge.challenge
+        challenge: issued.challenge,
+        attestationObject: b64u(credential.response.attestationObject),
+        clientDataJSON: b64u(credential.response.clientDataJSON)
       });
 
-      return saved?.ok ? { ok: true, count: saved.count } : { ok: false, error: saved?.error || 'The server refused it.' };
+      return saved?.ok
+        ? { ok: true, count: saved.count }
+        : { ok: false, error: saved?.error || 'The server refused it.' };
     } catch (err) {
-      // A cancelled prompt is a choice, not a failure.
       if (err?.name === 'NotAllowedError') return { ok: false, cancelled: true };
       BN.log?.warn('passkeys', 'Enrolment failed', err);
       return { ok: false, error: err.message };
     }
   }
 
-  BN.passkeys = { available, configured, status, add };
+  /**
+   * Signs in with a passkey.
+   *
+   * No account is named going in. The challenge is issued against nothing and
+   * the credential the authenticator picks is what identifies the account, so
+   * this cannot be used to find out whether an address is registered.
+   */
+  async function signIn() {
+    const state = status();
+    if (!state.ok) return { ok: false, error: state.text };
+
+    try {
+      const issued = await BN.api.account.passkeyLoginChallenge();
+      if (!issued?.challenge) return { ok: false, error: issued?.error || 'The server did not issue a challenge.' };
+
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: fromB64u(issued.challenge),
+          rpId: issued.rpId,
+          userVerification: 'preferred',
+          timeout: 60000
+        }
+      });
+
+      if (!assertion) return { ok: false, error: 'No passkey was offered.' };
+
+      const result = await BN.api.account.passkeyLogin({
+        challenge: issued.challenge,
+        credentialId: assertion.id,
+        authenticatorData: b64u(assertion.response.authenticatorData),
+        clientDataJSON: b64u(assertion.response.clientDataJSON),
+        signature: b64u(assertion.response.signature)
+      });
+
+      if (!result?.ok) return { ok: false, error: result?.error || 'That passkey could not be verified.' };
+
+      return { ok: true, user: result.user, token: result.token };
+    } catch (err) {
+      if (err?.name === 'NotAllowedError') return { ok: false, cancelled: true };
+      BN.log?.warn('passkeys', 'Sign-in failed', err);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  /** Removes a passkey from the signed-in account. */
+  async function remove(credentialId) {
+    const token = BN.state.data.remoteToken;
+    if (!token) return { ok: false, error: 'Not signed in to the account service.' };
+    return BN.api.account.passkeyRemove(token, credentialId);
+  }
+
+  BN.passkeys = { available, configured, status, add, signIn, remove };
 })();

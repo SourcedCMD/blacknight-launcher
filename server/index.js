@@ -160,8 +160,43 @@ router.post('/auth/reset/complete', (req, res, { body }) => json(res, 200, accou
 
 /* --- Passkeys ---------------------------------------------------------- */
 
-router.post('/auth/passkey/challenge', (req, res, { body }) => json(res, 200, accounts.challenge(body.userId)));
-router.post('/auth/passkey/register', (req, res, { body }) => json(res, 200, accounts.registerPasskey(body)));
+/** A challenge to enrol a new passkey on an account that is already signed in. */
+router.post('/auth/passkey/challenge', (req, res, { body }) => {
+  if (!within('default', req, res)) return;
+  json(res, 200, accounts.challenge(body.userId));
+});
+
+router.post('/auth/passkey/register', (req, res, { body }) => {
+  if (!within('default', req, res)) return;
+  json(res, 200, accounts.registerPasskey(body));
+});
+
+/**
+ * A challenge to sign in with.
+ *
+ * Names no account on purpose: asking for one by email would turn this into a
+ * way of testing which addresses are registered.
+ */
+router.post('/auth/passkey/login-challenge', (req, res) => {
+  if (!within('login', req, res)) return;
+  json(res, 200, accounts.loginChallenge());
+});
+
+/**
+ * Signing in with a passkey.
+ *
+ * Rate limited like a password sign-in. There is no per-account lockout here
+ * because the account is not known until the signature has been checked, and
+ * guessing a signature is not a thing that happens.
+ */
+router.post('/auth/passkey/login', (req, res, { body }) => {
+  if (!within('login', req, res)) return;
+  json(res, 200, accounts.signInWithPasskey(body));
+});
+
+router.post('/auth/passkey/remove', (req, res, { body }) => {
+  json(res, 200, accounts.removePasskey(bearer(req), body.credentialId));
+});
 
 /* --- Entitlements ------------------------------------------------------ */
 
@@ -413,6 +448,7 @@ server.listen(PORT, () => {
   log('info', `BlackNight services on http://localhost:${bound}`);
   log('info', `  catalog       GET  /catalog`);
   log('info', `  accounts      POST /auth/register, /auth/login, /auth/session`);
+  log('info', `  passkeys      POST /auth/passkey/login-challenge, /auth/passkey/login`);
   log('info', `  entitlements  GET  /entitlements`);
   log('info', `  crashes       POST /crash`);
   log('info', `  presence      GET  /presence`);

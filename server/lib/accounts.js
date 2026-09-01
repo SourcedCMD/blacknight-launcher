@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('crypto');
 const { Store } = require('./store');
+const { verifyRegistration, verifyAssertion } = require('./webauthn');
 
 /**
  * Accounts that exist somewhere other than one machine.
@@ -17,6 +18,7 @@ const { Store } = require('./store');
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const SESSION_DAYS = 30;
 const RESET_MINUTES = 30;
+const CHALLENGE_MINUTES = 5;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const HANDLE_RE = /^[A-Za-z0-9_]{3,20}$/;
@@ -48,7 +50,11 @@ const publicUser = (user) =>
 
 class Accounts {
   constructor(dir) {
-    this.store = new Store(dir, 'accounts', { users: [], sessions: {}, resets: {} });
+    this.store = new Store(dir, 'accounts', { users: [], sessions: {}, resets: {}, challenges: {} });
+    // Where credentials are scoped to. A passkey registered against one of
+    // these is refused against any other, which is the whole protection.
+    this.rpId = process.env.RP_ID || 'localhost';
+    this.origin = process.env.RP_ORIGIN || 'https://localhost';
   }
 
   _find(identifier) {
@@ -178,37 +184,154 @@ class Accounts {
   /* --- Passkeys --------------------------------------------------------- */
 
   /**
-   * A challenge for the browser to sign.
+   * A challenge for the authenticator to sign.
    *
-   * Verifying a WebAuthn assertion properly means parsing CBOR and checking a
-   * signature against the stored public key. That is real work and belongs
-   * behind a reviewed library rather than being improvised here, so this
-   * stores the credential and records the challenge, and the verification step
-   * is marked plainly as the piece to complete before it is relied on.
+   * Single use, short lived, and consumed whether or not the attempt succeeds:
+   * a challenge that survives a failure is a challenge that can be retried
+   * against until something works.
    */
   challenge(userId) {
     const challenge = crypto.randomBytes(32).toString('base64url');
     const users = this.store.get('users');
     const user = users.find((u) => u.id === userId);
     if (!user) throw fail(404, 'No such account.');
-    user.challenge = { value: challenge, expiresAt: Date.now() + 5 * 60000 };
+    user.challenge = { value: challenge, expiresAt: Date.now() + CHALLENGE_MINUTES * 60000 };
     this.store.set('users', users);
-    return { challenge, rpId: 'localhost', userId };
+    return { challenge, rpId: this.rpId, origin: this.origin, userId };
   }
 
-  registerPasskey({ userId, credentialId, publicKey, challenge }) {
+  /**
+   * A challenge for signing in, which cannot name an account.
+   *
+   * Asking for a passkey challenge by email would let anyone test whether an
+   * address is registered. This is issued against nothing, and the credential
+   * id inside the assertion is what identifies the account afterwards.
+   */
+  loginChallenge() {
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    const pending = this.store.get('challenges');
+    pending[challenge] = { expiresAt: Date.now() + CHALLENGE_MINUTES * 60000 };
+
+    // Expired ones are dropped here rather than on a timer.
+    for (const [key, record] of Object.entries(pending)) {
+      if (record.expiresAt < Date.now()) delete pending[key];
+    }
+    this.store.set('challenges', pending);
+
+    return { challenge, rpId: this.rpId, origin: this.origin };
+  }
+
+  /** Reads and consumes a user's challenge, in constant time. */
+  _takeChallenge(user, value) {
+    const held = user.challenge;
+    delete user.challenge;
+    if (!held || held.expiresAt < Date.now()) return false;
+
+    const a = Buffer.from(String(held.value));
+    const b = Buffer.from(String(value || ''));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+
+  /** Stores a credential, once its attestation has actually been checked. */
+  registerPasskey({ userId, attestationObject, clientDataJSON, challenge }) {
     const users = this.store.get('users');
     const user = users.find((u) => u.id === userId);
     if (!user) throw fail(404, 'No such account.');
-    if (!user.challenge || user.challenge.value !== challenge || user.challenge.expiresAt < Date.now()) {
-      throw fail(400, 'That challenge is no longer valid.');
+
+    // Consumed before anything else, so a failed attempt cannot be retried
+    // against the same challenge.
+    const held = this._takeChallenge(user, challenge);
+    this.store.set('users', users);
+    if (!held) throw fail(400, 'That challenge is no longer valid.');
+
+    let verified;
+    try {
+      verified = verifyRegistration({
+        attestationObject,
+        clientDataJSON: Buffer.from(clientDataJSON, 'base64url'),
+        challenge,
+        origin: this.origin,
+        rpId: this.rpId
+      });
+    } catch (err) {
+      throw fail(400, err.message);
     }
 
     user.passkeys = user.passkeys || [];
-    user.passkeys.push({ credentialId, publicKey, addedAt: Date.now() });
-    delete user.challenge;
+    if (user.passkeys.some((p) => p.credentialId === verified.credentialId)) {
+      throw fail(409, 'That passkey is already registered.');
+    }
+
+    user.passkeys.push({
+      credentialId: verified.credentialId,
+      publicKeyJwk: verified.publicKeyJwk,
+      signCount: verified.signCount,
+      fmt: verified.fmt,
+      addedAt: Date.now()
+    });
     this.store.set('users', users);
+
     return { ok: true, count: user.passkeys.length };
+  }
+
+  /**
+   * Signs in with a passkey.
+   *
+   * The credential id identifies the account, so nothing about who is signing
+   * in is revealed before a valid signature exists.
+   */
+  signInWithPasskey({ credentialId, authenticatorData, clientDataJSON, signature, challenge }) {
+    const pending = this.store.get('challenges');
+    const held = pending[challenge];
+    // Consumed whatever happens next.
+    delete pending[challenge];
+    this.store.set('challenges', pending);
+
+    const generic = 'That passkey could not be verified.';
+    if (!held || held.expiresAt < Date.now()) throw fail(401, generic);
+
+    const users = this.store.get('users');
+    const user = users.find((u) => (u.passkeys || []).some((p) => p.credentialId === credentialId));
+    if (!user) throw fail(401, generic);
+
+    const credential = user.passkeys.find((p) => p.credentialId === credentialId);
+
+    let result;
+    try {
+      result = verifyAssertion({
+        credential,
+        authenticatorData,
+        clientDataJSON: Buffer.from(clientDataJSON, 'base64url'),
+        signature,
+        challenge,
+        origin: this.origin,
+        rpId: this.rpId
+      });
+    } catch {
+      // The specific reason goes nowhere the caller can see: a detailed
+      // failure here is a description of how to get closer next time.
+      throw fail(401, generic);
+    }
+
+    credential.signCount = result.signCount;
+    credential.lastUsedAt = Date.now();
+    this.store.set('users', users);
+
+    return { user: publicUser(user), token: this._issueSession(user) };
+  }
+
+  /** Removes a passkey. */
+  removePasskey(token, credentialId) {
+    const session = this.session(token);
+    if (!session) throw fail(401, 'Not signed in.');
+
+    const users = this.store.get('users');
+    const user = users.find((u) => u.id === session.id);
+    const before = (user.passkeys || []).length;
+    user.passkeys = (user.passkeys || []).filter((p) => p.credentialId !== credentialId);
+    this.store.set('users', users);
+
+    return { ok: user.passkeys.length < before, count: user.passkeys.length };
   }
 
   /* --- Entitlements ------------------------------------------------------ */

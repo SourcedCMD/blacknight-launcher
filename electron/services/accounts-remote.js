@@ -32,7 +32,7 @@ function validUrl(raw) {
   }
 }
 
-function postJson(url, body) {
+function postJson(url, body, token = null) {
   return new Promise((resolve, reject) => {
     const payload = Buffer.from(JSON.stringify(body || {}), 'utf8');
     const client = url.protocol === 'http:' ? http : https;
@@ -42,7 +42,11 @@ function postJson(url, body) {
       {
         method: 'POST',
         timeout: TIMEOUT_MS,
-        headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length }
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': payload.length,
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
       },
       (response) => {
         let size = 0;
@@ -84,13 +88,13 @@ class RemoteAccounts {
     return validUrl(this.settings.get('accountsUrl'));
   }
 
-  async _call(route, body) {
+  async _call(route, body, token = null) {
     const base = this._base();
     if (!base) return { ok: false, reason: 'not-configured' };
 
     try {
       const url = new URL(route.replace(/^\//, ''), base.href.endsWith('/') ? base.href : `${base.href}/`);
-      const { status, body: reply } = await postJson(url, body);
+      const { status, body: reply } = await postJson(url, body, token);
       if (status !== 200) return { ok: false, error: reply?.error || `HTTP ${status}` };
       return { ok: true, ...reply };
     } catch (err) {
@@ -105,6 +109,19 @@ class RemoteAccounts {
 
   passkeyRegister(payload) {
     return this._call('auth/passkey/register', payload);
+  }
+
+  /** A challenge to sign in with. Names no account, by design. */
+  passkeyLoginChallenge() {
+    return this._call('auth/passkey/login-challenge', {});
+  }
+
+  passkeyLogin(payload) {
+    return this._call('auth/passkey/login', payload);
+  }
+
+  passkeyRemove(token, credentialId) {
+    return this._call('auth/passkey/remove', { credentialId }, token);
   }
 }
 

@@ -693,6 +693,9 @@ function registerIpc() {
   const remoteAccounts = new (require('./services/accounts-remote').RemoteAccounts)(settings, log);
   handle('account:passkey-challenge', (userId) => remoteAccounts.passkeyChallenge(userId));
   handle('account:passkey-register', (payload) => remoteAccounts.passkeyRegister(payload));
+  handle('account:passkey-login-challenge', () => remoteAccounts.passkeyLoginChallenge());
+  handle('account:passkey-login', (payload) => remoteAccounts.passkeyLogin(payload));
+  handle('account:passkey-remove', (token, credentialId) => remoteAccounts.passkeyRemove(token, credentialId));
 
   handle('library:foreign', () => {
     if (settings.get('detectOtherLaunchers') !== true) {

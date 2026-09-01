@@ -860,7 +860,7 @@
       if (result.cancelled) return;
       BN.ui.toast(
         result.ok ? 'Passkey added' : 'Could not add a passkey',
-        result.ok ? 'It is stored, but sign-in still uses your password.' : result.error || '',
+        result.ok ? 'You can sign in with it from now on.' : result.error || '',
         { kind: result.ok ? 'ok' : 'error' }
       );
     });
