@@ -8,6 +8,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-01
+
 ### Added
 - Playtest and beta channels per title, with BlackNight+ entitlement enforced
   in the main process rather than the UI.
@@ -31,7 +33,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Release notes taken from this file and put on the GitHub release.
 - Code signing wired into the release workflow, active once the certificate
   secrets are set.
-
 ## [1.0.0]
 
 First packaged release. Launcher shell, store, library, downloads with resume,
