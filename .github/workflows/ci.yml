@@ -10,7 +10,16 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    # The services are plain Node, but the app only ships for Windows and the
+    # runners differ in ways that matter: path separators, case sensitivity and
+    # how the network treats unreachable addresses have all bitten this suite.
+    # Testing both is how that stops being a surprise found on main.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -23,17 +32,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Captured as well as printed, so a failure can be turned into
+      # annotations rather than something you have to open the log to read.
       - name: Run tests
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+
+      - name: Surface the failure
+        if: failure()
+        shell: bash
+        run: node scripts/ci-annotate.js test-output.txt
 
       # The catalog is hosted, so a bad field should fail here rather than on
       # someone's machine.
       - name: Validate the catalog
         run: npm run check:catalog
 
-      # The services are plain Node, so they are checked on Linux even though
-      # the app itself only ships for Windows.
       - name: Check every file parses
+        shell: bash
         run: |
           find src electron scripts test -name '*.js' -print0 \
             | xargs -0 -n1 node --check
