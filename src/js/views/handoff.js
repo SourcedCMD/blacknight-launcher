@@ -9,7 +9,6 @@
   'use strict';
   const BN = (window.BN = window.BN || {});
   const { el, esc } = BN.util;
-  const icon = BN.icon;
 
   let countdown = null;
 

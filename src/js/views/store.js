@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
-  const { el, esc, bytes, money, date, countdown, debounce } = BN.util;
+  const { el, esc, countdown, debounce } = BN.util;
   const icon = BN.icon;
 
   const FILTERS = [

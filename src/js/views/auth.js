@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
-  const { $, el, esc } = BN.util;
+  const { $, esc } = BN.util;
   const icon = BN.icon;
 
   let mode = 'signin';

@@ -2,7 +2,6 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Store } = require('./store');
 

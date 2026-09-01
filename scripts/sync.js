@@ -15,6 +15,7 @@
  *   - you are on a branch, not a detached HEAD
  *   - nothing that looks like a credential is about to be committed
  *   - every JS file parses
+ *   - the linter is clean
  *   - the test suite passes
  *   - the catalog is valid
  *
@@ -179,6 +180,10 @@ function main() {
   const broken = checkSyntax();
   if (broken.length) die('A JavaScript file does not parse.', broken.join('\n'));
   pass(`${syntaxCount} file(s)`);
+
+  step('lint');
+  run('npm run lint', 'Lint failed, so nothing was pushed.');
+  pass();
 
   step('tests');
   run('npm test', 'The test suite failed, so nothing was pushed.');

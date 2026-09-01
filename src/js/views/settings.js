@@ -971,10 +971,10 @@
       };
 
       if (st.status === 'available') control.append(button('Download', 'btn-accent', () => BN.api.updates.download()));
-      else if (st.status === 'ready') control.append(button('Restart now', 'btn-accent', async () => {
+      else if (st.status === 'ready') {control.append(button('Restart now', 'btn-accent', async () => {
         await BN.api.updates.install();
         return st;
-      }));
+      }));}
       else if (st.status !== 'unsupported' && st.status !== 'checking' && st.status !== 'downloading') {
         control.append(button('Check now', 'btn-ghost', () => BN.api.updates.check()));
       }

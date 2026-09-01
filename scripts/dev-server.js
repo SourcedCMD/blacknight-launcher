@@ -27,7 +27,7 @@ const TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  let urlPath = decodeURIComponent(req.url.split('?')[0]);
+  const urlPath = decodeURIComponent(req.url.split('?')[0]);
 
   // Redirect rather than rewrite, so the page's relative asset paths resolve
   // against /src/ instead of the project root.

@@ -32,6 +32,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Cheap and fails fast, so it runs before the suite.
+      - name: Lint
+        run: npm run lint
+
       # Captured as well as printed, so a failure can be turned into
       # annotations rather than something you have to open the log to read.
       - name: Run tests

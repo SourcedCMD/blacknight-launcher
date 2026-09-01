@@ -306,8 +306,8 @@
 
   let bg = null;
   let glowNode = null;
-  let glowTarget = { x: 0, y: 0 };
-  let glowPos = { x: 0, y: 0 };
+  const glowTarget = { x: 0, y: 0 };
+  const glowPos = { x: 0, y: 0 };
   let glowRaf = null;
 
   function glowLoop() {

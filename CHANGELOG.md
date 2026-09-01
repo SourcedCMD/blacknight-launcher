@@ -44,6 +44,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Handheld layout for a Deck or a small screen.
 - Handoff: move settings, library records and history to another machine over
   the local network, with a pairing code and a QR of the same link.
+- Installer trimmed from 106 MB to 90 MB: one Chromium locale instead of 55,
+  and the graphics libraries this UI never calls removed after packing.
+- Electron fuses, so a packaged build refuses runAsNode, NODE_OPTIONS and the
+  inspector, and validates its own asar.
+- A winget manifest generator, and ESLint wired into CI and into sync.
+- Releases publish live rather than as an invisible draft.
 ## [1.0.0]
 
 First packaged release. Launcher shell, store, library, downloads with resume,

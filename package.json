@@ -19,9 +19,11 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "test": "node --test --test-timeout=60000",
+    "lint": "eslint .",
     "web": "node scripts/dev-server.js",
     "icon": "node scripts/make-icon.js",
     "og": "node scripts/make-og.js",
+    "winget": "node scripts/make-winget.js",
     "check:catalog": "node scripts/check-catalog.js",
     "doctor": "node scripts/doctor.js",
     "sync": "node scripts/sync.js",
@@ -36,7 +38,8 @@
   },
   "devDependencies": {
     "electron": "^44.0.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "eslint": "^10.9.1"
   },
   "build": {
     "appId": "com.blacknightstudios.launcher",
@@ -78,7 +81,8 @@
       {
         "provider": "github",
         "owner": "SourcedCMD",
-        "repo": "blacknight-launcher"
+        "repo": "blacknight-launcher",
+        "releaseType": "release"
       }
     ],
     "portable": {
@@ -97,6 +101,18 @@
           "Categories": "Game;"
         }
       }
-    }
+    },
+    "electronLanguages": [
+      "en-US"
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
+    "afterPack": "scripts/after-pack.js"
   }
 }

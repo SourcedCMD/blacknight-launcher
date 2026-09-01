@@ -8,8 +8,7 @@
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
-  const { el, esc, duration, playtime, relative } = BN.util;
-  const icon = BN.icon;
+  const { el, esc, duration } = BN.util;
 
   const HOUR = (h) => `${String(h).padStart(2, '0')}:00`;
 

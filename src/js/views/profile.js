@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
-  const { el, esc, bytes, duration, date, relative, initials, countTo } = BN.util;
+  const { el, esc, bytes, duration, date, initials, countTo } = BN.util;
   const icon = BN.icon;
 
   function render() {

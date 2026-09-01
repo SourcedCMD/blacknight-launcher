@@ -222,13 +222,13 @@
     const open = () => {
       if (item.gameId) openDetail(item.gameId);
       else
-        BN.ui.modal({
+        {BN.ui.modal({
           title: item.title,
           content: `<span class="badge badge-accent">${esc(item.kind)}</span>
             <p style="margin-top:14px;color:var(--text-dim);line-height:1.8">${esc(item.body)}</p>
             <p class="mute" style="margin-top:18px;font-size:.78rem">Posted ${esc(date(item.date))}</p>`,
           footer: [{ label: 'Close', class: 'btn-ghost', onClick: ({ close }) => close() }]
-        });
+        });}
     };
     card.addEventListener('click', open);
     card.addEventListener('keydown', (e) => {

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
-  const { el, esc, bytes, date, relative } = BN.util;
+  const { el, esc, bytes, relative } = BN.util;
   const icon = BN.icon;
 
   /* --------------------------------------------------------------------- */

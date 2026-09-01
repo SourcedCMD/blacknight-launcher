@@ -12,7 +12,7 @@
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
-  const { el, esc, bytes } = BN.util;
+  const { el, esc } = BN.util;
   const icon = BN.icon;
 
   const ACCENTS = [
@@ -25,7 +25,6 @@
   ];
 
   let step = 0;
-  let modal = null;
 
   const STEPS = [installStep, lookStep, soundStep];
 
@@ -124,7 +123,7 @@
 
     body.append(node, dots);
 
-    modal = BN.ui.modal({
+    BN.ui.modal({
       title,
       content: body,
       chrome: true,
