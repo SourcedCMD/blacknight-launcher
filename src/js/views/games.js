@@ -187,6 +187,16 @@
             : ''
         }
 
+        <section class="section hidden" data-reveal id="foreign-section">
+          <div class="section-head">
+            <div>
+              <h2>Also on this PC</h2>
+              <div class="sub">Installed by another launcher — opened with the one that owns it</div>
+            </div>
+          </div>
+          <div class="foreign-grid" id="foreign-list"></div>
+        </section>
+
         <section class="section" data-reveal>
           <div class="section-head">
             <div><h2>News and events</h2><div class="sub">From BlackNight Studios</div></div>
@@ -225,6 +235,10 @@
     if (continueList) {
       for (const game of continuePlaying) continueList.appendChild(libraryRow(game));
     }
+
+    // Off the critical path: the view is already painted by the time this
+    // finishes walking four install directories.
+    renderForeign();
 
     const news = view.querySelector('#rail-news');
     for (const item of catalog.news) news.appendChild(BN.components.newsCard(item, catalog.games));
@@ -278,8 +292,69 @@
   }
 
   BN.views = BN.views || {};
+  /**
+   * Games another launcher installed.
+   *
+   * Rendered after the rest of the view rather than blocking it: the scan
+   * touches the disk, and the page should not wait on four directory walks to
+   * show the titles this launcher owns.
+   *
+   * Nothing here launches anything. Each row opens the launcher that owns the
+   * game through its own protocol handler, or the install folder when there is
+   * no handler to use - starting somebody else's game behind their launcher's
+   * back is how you corrupt a save.
+   */
+  async function renderForeign() {
+    const section = document.getElementById('foreign-section');
+    const host = document.getElementById('foreign-list');
+    if (!section || !host) return;
+
+    let result;
+    try {
+      result = await BN.api.library.foreign();
+    } catch (err) {
+      BN.log?.warn('games', 'Could not read other launchers', err);
+      return;
+    }
+
+    if (!result.games.length) {
+      section.classList.add('hidden');
+      return;
+    }
+
+    section.classList.remove('hidden');
+    host.innerHTML = '';
+
+    for (const game of result.games) {
+      const card = el('button', { class: 'foreign-card', 'data-source': game.source });
+      card.innerHTML = `
+        <span class="foreign-mark">${esc(SOURCE_LABEL[game.source] || game.source)}</span>
+        <span class="foreign-title">${esc(game.title)}</span>
+        ${game.sizeBytes ? `<span class="foreign-meta">${esc(BN.util.bytes(game.sizeBytes))}</span>` : ''}`;
+
+      card.addEventListener('click', async () => {
+        // The owning launcher starts it, or the folder opens when there is
+        // no handler. This app never starts another launcher's game itself.
+        const result = game.launch
+          ? await BN.api.app.openLauncher?.(game.launch)
+          : await BN.api.app.openPath?.(game.path);
+        if (result && result.ok === false) BN.ui.toast('Could not open that', result.error, { kind: 'error' });
+      });
+      host.append(card);
+    }
+
+    // A launcher whose format changed is worth saying once, quietly, rather
+    // than silently showing a short list.
+    if (result.errors.length) {
+      BN.log?.warn('games', 'Some launchers could not be read', result.errors);
+    }
+  }
+
+  const SOURCE_LABEL = { steam: 'Steam', epic: 'Epic', gog: 'GOG', xbox: 'Xbox' };
+
   BN.views.games = {
     render,
+    renderForeign,
     onEnter: startRotation,
     onLeave: stopRotation,
     libraryRow

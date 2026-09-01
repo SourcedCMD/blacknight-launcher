@@ -50,6 +50,18 @@
       body.innerHTML = `<p class="dim" style="line-height:1.7">
         Nothing recorded yet. A line is written here each time you finish a session.</p>`;
     } else {
+      // The shape first, then the detail. Most people open this to remember
+      // roughly when they were playing, which the grid answers immediately.
+      const map = el('div', { class: 'journal-map' });
+      map.append(el('h4', { class: 'section-label' }, gameId ? 'When you play this' : 'When you play'));
+      const grid = el('div');
+      map.append(grid);
+      body.append(map);
+      BN.views.nightmap.render(grid, { gameId }).catch((err) => {
+        BN.log?.warn('journal', 'Night map failed to draw', err);
+        map.remove();
+      });
+
       const list = el('div', { class: 'col', style: { gap: '8px' } });
       for (const entry of entries) list.append(journalRow(entry));
       body.append(list);

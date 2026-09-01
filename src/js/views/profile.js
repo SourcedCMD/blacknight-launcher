@@ -85,6 +85,13 @@
     review.innerHTML = `${icon('sparkles')} Year in review`;
     review.addEventListener('click', () => BN.views.journal.yearInReview());
 
+    // Sits next to the year in review because both are 'something to show
+    // somebody', and neither belongs in Settings.
+    const shareLib = el('button', { class: 'btn btn-ghost' });
+    shareLib.innerHTML = `${icon('share')} Share your library`;
+    shareLib.addEventListener('click', () => BN.views.libraryShare.open());
+    review.after(shareLib);
+
     actions.append(journal, review, edit, membership);
 
     const most = view.querySelector('#most-played');

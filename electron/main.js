@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, Tray, Menu, screen, Notification, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, Tray, Menu, screen, Notification, globalShortcut, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -661,6 +661,22 @@ function registerIpc() {
   handle('library:journal-note', (id, note) => library.setJournalNote(id, note));
   handle('library:insights', (gameId) => library.sessionInsights(gameId));
   handle('library:year-in-review', (year) => library.yearInReview(year));
+  /**
+   * Games other launchers installed.
+   *
+   * Gated on the setting rather than trusting the renderer to ask only when
+   * it should: this reads directories outside anything the launcher owns, and
+   * the check belongs on the side that does the reading.
+   */
+  handle('library:foreign', () => {
+    if (settings.get('detectOtherLaunchers') !== true) {
+      return { games: [], errors: [], scannedAt: Date.now(), reason: 'not-enabled' };
+    }
+    return require('./services/foreign').scan();
+  });
+
+  handle('library:play-map', (options) => library.playMap(options));
+  handle('library:ghost', (gameId) => library.ghost(gameId));
 
   /* LAN sharing --------------------------------------------------------- */
   handle('peers:list', () => peers.list());
@@ -694,6 +710,32 @@ function registerIpc() {
       return { ok: true, path: picked.filePath };
     } catch (err) {
       log.warn('review', 'Could not save the poster', err);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * Writes a text file the user picked a location for.
+   *
+   * The dialog is the authorisation: nothing is written anywhere the user did
+   * not choose, and the extension is fixed so this cannot be talked into
+   * dropping a .bat or a .ps1 somewhere convenient.
+   */
+  handle('app:save-text', async (text, suggested) => {
+    try {
+      const safe = String(suggested || 'blacknight.html').replace(/[^\w.-]/g, '_');
+      const picked = await dialog.showSaveDialog(win, {
+        defaultPath: path.join(app.getPath('documents'), safe.endsWith('.html') ? safe : `${safe}.html`),
+        filters: [{ name: 'Web page', extensions: ['html'] }]
+      });
+      if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+      if (path.extname(picked.filePath).toLowerCase() !== '.html') {
+        return { ok: false, error: 'That needs to be saved as an .html file.' };
+      }
+      fs.writeFileSync(picked.filePath, String(text), 'utf8');
+      return { ok: true, path: picked.filePath };
+    } catch (err) {
+      log.warn('share', 'Could not save the page', err);
       return { ok: false, error: err.message };
     }
   });
@@ -794,12 +836,32 @@ function registerIpc() {
     return result.canceled ? null : result.filePaths[0];
   });
 
+  handle('app:copy', (text) => {
+    clipboard.writeText(String(text || ''));
+    return { ok: true };
+  });
+
   handle('app:open-path', (target) => (target ? shell.openPath(target) : null));
   handle('app:show-item', (target) => (target ? shell.showItemInFolder(target) : null));
 
   handle('app:open-external', (url) => {
     if (/^https:\/\//i.test(String(url))) return shell.openExternal(url);
     return null; // http and custom schemes are refused on purpose
+  });
+
+  /**
+   * Hands a game back to the launcher that owns it.
+   *
+   * The whitelist lives in the foreign scanner so it can be tested on its own.
+   */
+  handle('app:open-launcher', (url) => {
+    const target = String(url || '');
+    if (!require('./services/foreign').isLauncherUrl(target)) {
+      log.warn('shell', `Refused to open an unrecognised launcher URL: ${target.slice(0, 80)}`);
+      return { ok: false, error: 'That is not a launcher URL this app will open.' };
+    }
+    shell.openExternal(target);
+    return { ok: true };
   });
 
   handle('app:set-launch-on-startup', (enabled) => {

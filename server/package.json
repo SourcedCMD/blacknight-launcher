@@ -1,0 +1,15 @@
+{
+  "name": "blacknight-services",
+  "version": "1.0.0",
+  "description": "Catalog, accounts, entitlements, crash intake and rendezvous for the BlackNight Launcher.",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test --test-timeout=60000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

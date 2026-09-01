@@ -349,6 +349,17 @@
     });
     actions.appendChild(fav);
 
+    // The share pages have existed since the site went up; this is the first
+    // thing in the launcher that points at one. The tooltip says what will
+    // actually happen, which depends on whether the runtime has a share sheet.
+    const shareBtn = el('button', {
+      class: 'btn btn-ghost',
+      'data-tip': BN.share.canShareNatively() ? 'Share' : 'Copy a link to this title'
+    });
+    shareBtn.innerHTML = icon('share');
+    shareBtn.addEventListener('click', () => BN.share.share(game.id));
+    actions.appendChild(shareBtn);
+
     if (game.installed) {
       const folder = el('button', { class: 'btn btn-ghost', 'data-tip': 'Open install folder' });
       folder.innerHTML = icon('folder');

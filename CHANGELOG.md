@@ -8,6 +8,48 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **Services** (`server/`), a zero-dependency Node backend for the three
+  settings the launcher already had and could not point anywhere: catalog,
+  crash reports, and WebRTC rendezvous. Accounts with scrypt hashing matching
+  the launcher's own, password reset, and entitlements a user cannot grant
+  themselves. Includes a hand-written RFC 6455 WebSocket server, because Node
+  ships a client and no server and a signalling relay is about a hundred lines.
+- **Night map**: a week-by-hour grid of when you actually play, drawn from the
+  local journal. A session is spread across the hours it covered, so a long
+  evening reads as an evening rather than landing in the hour it ended.
+- **Session ghost**: a quiet bar comparing the run you are in with your own
+  median for that title. Not a target and not a streak.
+- **Wind-down**: optionally says once, gently, that it is late. Off by default,
+  and it never stops you playing.
+- **Games from other launchers**: reads the install manifests Steam, Epic, GOG
+  and Xbox already wrote, so the library is the whole machine. Off by default,
+  read-only, and nothing leaves the PC. Titles are handed back to the launcher
+  that owns them through a whitelist of exactly two URL shapes.
+- **Share a title**: the share pages have existed since the site went up and
+  nothing in the launcher pointed at one.
+- **Share your library**: one self-contained HTML file with generated art, no
+  network requests, and no playtime or account details in it.
+- `npm run check:budget`, a performance budget over the shipped source, checked
+  in CI. The renderer has no build step and no dependencies; both are easy to
+  give away one commit at a time.
+
+### Changed
+- Key art is memoised, so re-rendering the library is a map lookup rather than
+  a few thousand string concatenations per thumbnail.
+
+### Fixed
+- A stray control character had got into `foreign.js` through a bad escape in a
+  patch; the launcher-URL whitelist is now tested directly.
+
+### Tests
+- 221 launcher tests, up from 161: the renderer's pure logic (formatters, the
+  seeded PRNG, translation, art determinism) had one file covered out of
+  twenty-nine, plus the night map, ghost sessions and the foreign scanner.
+- 22 service tests, run in CI, against a real server on an ephemeral port —
+  including the WebSocket relay through the browser's own client.
+
+
 ## [1.0.1] - 2026-09-01
 
 ### Added

@@ -163,6 +163,7 @@
     paintNowPlaying();
     // Peers announce every twenty seconds; matching that is enough.
     setInterval(paintNowPlaying, 20000);
+    BN.session?.start();
     BN.api.app.onQuickLaunch?.(() => quickLaunch());
     // A pad connecting is exactly when handheld mode should switch on.
     window.addEventListener('gamepadconnected', applyHandheldMode);
@@ -629,6 +630,8 @@
       { group: 'Actions', label: 'Play journal', icon: 'clock', keywords: 'history sessions log', run: () => BN.views.journal.open() },
       { group: 'Actions', label: 'Achievements', icon: 'award', keywords: 'badges trophies', run: () => BN.views.achievements.open() },
       { group: 'Actions', label: 'Your year in the dark', icon: 'sparkles', keywords: 'review wrapped stats year', run: () => BN.views.journal.yearInReview() },
+      { group: 'Actions', label: 'Share your library', icon: 'share', keywords: 'share library page export html', run: () => BN.views.libraryShare.open() },
+      { group: 'Actions', label: 'When you play', icon: 'clock', keywords: 'night map heatmap hours journal when', run: () => BN.views.journal.open() },
       { group: 'Account', label: 'Sign out', icon: 'logout', run: signOut }
     );
 

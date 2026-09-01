@@ -57,7 +57,7 @@ electron/            Main process
     achievements.js  Local achievements, earned from play history
     chunks.js        Block-level delta patching: manifests, diffs, plans
     peers.js         LAN peer install over multicast discovery
-    achievements.js  Local achievements, earned from play history
+    foreign.js       Games other launchers installed (read only, opt in)
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -410,6 +410,43 @@ Status is never carried by colour alone: the "will it run?" verdict uses a
 distinct glyph per state, so it survives greyscale. Interface scale, reduced
 motion and the animated background are all switchable.
 
+## The services
+
+`server/` is a small Node backend, dependency-free like the rest of the
+project. It exists because three settings in the launcher pointed nowhere:
+
+```
+server/
+  index.js           Routes, and the rendezvous relay
+  lib/http.js        Router, JSON body reader with a 2 MB cap, CORS
+  lib/accounts.js    scrypt hashing matching the launcher exactly
+  lib/ws.js          RFC 6455 server: handshake, framing, unmasking
+  lib/store.js       The launcher's atomic JSON store
+```
+
+Three things it is careful about:
+
+- **Sign-in cannot be used to enumerate accounts.** A wrong password and an
+  address that was never registered produce the same reply, and the missing
+  case still spends the time hashing so it is not measurably faster.
+- **A password reset never confirms an address exists.** It always reports
+  success, and issues a token only when there is somebody to issue it for.
+  Completing one kills every existing session.
+- **Entitlements cannot be self-granted.** Granting is behind a shared secret
+  meant for a payment processor's webhook, not a session — and with
+  `ADMIN_TOKEN` unset, nothing can grant anything.
+
+What it is not: a payment system, a CDN, or hardened for the open internet.
+`server/README.md` says so plainly, along with how to point the launcher at it.
+
+## Performance budget
+
+The renderer has no build step and no dependencies, which is why the window
+paints quickly. Nobody adds two megabytes of JavaScript deliberately; it
+arrives as twelve reasonable-looking commits. So the sizes are written down in
+`scripts/check-budget.js` and checked in CI. Raising a limit is a visible line
+in a diff that someone has to justify.
+
 ## Status
 
 The UI, the IPC surface and all six views are complete and driven by working
@@ -419,16 +456,19 @@ services. Still to connect before a public release:
   Removing that needs a code-signing certificate.
 - **No title has shipped a build.** No catalog entry carries a `downloadUrl`,
   so a packaged launcher currently has nothing it can install.
-- **Accounts are local only.** Credentials live in `%APPDATA%` as scrypt
-  hashes; there is no remote account service, so cloud saves, cross-device
-  libraries and password recovery cannot work yet.
+- **Accounts are local by default.** Credentials live in `%APPDATA%` as scrypt
+  hashes. `server/` now provides the other mode — an account that follows you
+  to a second machine, a password that can actually be reset — but nothing is
+  deployed, so the launcher still runs entirely locally until it is.
 - **The store and memberships are closed** (`BN.config.storeLive`), and code
   redemption reports the service as unavailable.
 - **`BN.links` is empty**, so site, support and legal links stay hidden until
   those pages exist.
 - **Rich presence needs a Discord application ID** (`CLIENT_ID` in
   `presence.js`) before it can connect.
-- **`catalogUrl` is empty**, so the slate and news come from the bundled copy
-  until it points at a hosted `catalog.json`.
+- **`catalogUrl`, `crashReportUrl` and `rendezvousUrl` are empty**, so the
+  slate comes from the bundled copy, crashes stay on disk, and the rendezvous
+  is dormant. `server/` implements all three and `server/README.md` gives the
+  values; they stay empty until somebody deploys it and fills them in.
 - **Live player counts are not populated.** The field exists but no service
   fills it, so nothing is displayed rather than a number being invented.

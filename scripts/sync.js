@@ -84,6 +84,16 @@ function scanForSecrets(files) {
     [/\b(?:api[_-]?key|secret|password)\s*[:=]\s*['"][^'"]{12,}['"]/i, 'a hard-coded credential']
   ];
 
+  /**
+   * The one way past this check.
+   *
+   * A test suite needs literal passwords, and a scanner with no escape hatch
+   * gets switched off entirely the first time it is inconvenient - which is
+   * the worst of both worlds. So the exception is per line, has to be typed
+   * deliberately, and shows up in the diff where someone can question it.
+   */
+  const ALLOW = /sync-allow-secret/;
+
   const found = [];
   for (const file of files) {
     // Only text we are actually adding, and never the lockfile or binaries.
@@ -93,8 +103,15 @@ function scanForSecrets(files) {
     // From the index normally; from disk on a dry run, where nothing is staged.
     const result = DRY ? readWorking(file) : tryGit('show', `:${file}`);
     if (!result.ok) continue;
-    for (const [pattern, what] of PATTERNS) {
-      if (pattern.test(result.out)) found.push(`${file}: looks like ${what}`);
+
+    // Line by line, so the report says where to look rather than only which
+    // file to search.
+    const lines = result.out.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      if (ALLOW.test(lines[i])) continue;
+      for (const [pattern, what] of PATTERNS) {
+        if (pattern.test(lines[i])) found.push(`${file}:${i + 1}: looks like ${what}`);
+      }
     }
   }
   return found;

@@ -49,6 +49,15 @@ const DEFAULTS = {
   handheldMode: 'auto', // auto | on | off
   viewTransitions: true,
   attractMode: true,
+  // Off by default. Reads the install manifests Steam, Epic, GOG and Xbox
+  // already wrote, so the library can show what is on the machine rather than
+  // only what this launcher put there. Never leaves the machine.
+  detectOtherLaunchers: false,
+  // A quiet bar comparing the current run with this player's own median.
+  sessionGhost: true,
+  // Empty means the launcher never mentions the hour. A number is the hour
+  // after which it says so once per session, and then stops.
+  windDownHour: '',
   evolvingArt: true,
   windowBounds: null,
   windowMaximized: false,

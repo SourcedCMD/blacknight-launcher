@@ -271,7 +271,29 @@
         ]),
         toggle('viewTransitions', 'Animate between pages', 'Cross-fades when moving between Games, Store and the rest.'),
         toggle('attractMode', 'Show a screensaver when idle', 'After a few quiet minutes the launcher becomes a dashboard.'),
-        toggle('evolvingArt', 'Let art grow with playtime', 'A title you have lived in gains sky the more you play it.'),
+        // Reads install manifests Steam, Epic, GOG and Xbox already wrote to
+        // disk. Off until asked for, and the main process re-checks this
+        // setting itself rather than trusting the request.
+        toggle('detectOtherLaunchers', 'Show games from other launchers',
+          'Finds what Steam, Epic, GOG and Xbox have installed so your library is the whole machine. Read only, and nothing leaves this PC.',
+          () => BN.util.bus.emit('foreign-changed')),
+
+        toggle('sessionGhost', 'Show how long this run is going',
+          'A quiet bar comparing the session you are in with your own usual one for that title.'),
+
+        // Empty is the default and means the launcher never raises it. Anyone
+        // who wants the nudge can pick their own hour; nobody gets it uninvited.
+        select('windDownHour', 'Mention the hour after',
+          'Says once, gently, that it is late. It never stops you playing.',
+          [['', 'Never'], ['21', '21:00'], ['22', '22:00'], ['23', '23:00'], ['0', 'Midnight'], ['1', '01:00']]),
+
+        // Art is memoised by its options, and this setting changes what those
+        // options are. Without dropping the drawn copies the change would only
+        // show on titles that happened to have been evicted. Nothing needs
+        // repainting here - no art is on screen - and the library redraws from
+        // an empty cache the next time it is opened.
+        toggle('evolvingArt', 'Let art grow with playtime', 'A title you have lived in gains sky the more you play it.',
+          () => BN.art.keyArt.clearCache()),
         select('handheldMode', 'Handheld layout', 'Larger controls and fewer columns, for a Deck or a small screen.', [
           ['auto', 'Automatic'],
           ['on', 'Always on'],

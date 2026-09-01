@@ -756,6 +756,82 @@ class Library {
   }
 
   /**
+   * When this player actually plays, as a week by hour grid.
+   *
+   * Seven rows, twenty-four columns, seconds in each cell. A person's playing
+   * has a shape - weeknights after nine, Saturday afternoons - and that shape
+   * is legible at a glance in a way a list of sessions never is.
+   *
+   * Weeks are counted from Monday, because a week that splits the weekend
+   * across two ends of the chart hides the thing most people are looking for.
+   */
+  playMap({ weeks = 26, gameId = null } = {}) {
+    const since = Date.now() - weeks * 7 * 86400000;
+    const entries = this.journal(gameId, { limit: 2000 }).filter((e) => e.at >= since && e.seconds > 60);
+
+    // grid[day][hour], day 0 = Monday.
+    const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
+
+    for (const entry of entries) {
+      // A session is spread across the hours it actually covered, so a
+      // four-hour evening does not land entirely in the hour it ended.
+      let remaining = entry.seconds;
+      let cursor = entry.at - entry.seconds * 1000;
+
+      // Guard against a corrupt entry claiming an implausible length.
+      let guard = 0;
+      while (remaining > 0 && guard++ < 240) {
+        const at = new Date(cursor);
+        const day = (at.getDay() + 6) % 7; // Sunday is 0 in JS; put Monday first.
+        const hour = at.getHours();
+
+        const endOfHour = new Date(at).setMinutes(60, 0, 0);
+        const slice = Math.min(remaining, (endOfHour - cursor) / 1000);
+
+        grid[day][hour] += slice;
+        remaining -= slice;
+        cursor = endOfHour;
+      }
+    }
+
+    const peak = Math.max(1, ...grid.flat());
+    return {
+      grid,
+      peak,
+      totalSeconds: entries.reduce((sum, e) => sum + e.seconds, 0),
+      sessions: entries.length,
+      weeks
+    };
+  }
+
+  /**
+   * How the session running right now compares with the usual one.
+   *
+   * The launcher already knows when this session started and what this
+   * player's sessions normally look like. Putting the two together is the
+   * whole feature: a quiet mark of where you are against your own history,
+   * rather than a number that means nothing without context.
+   */
+  ghost(gameId) {
+    const session = this.sessions.get(gameId);
+    if (!session) return null;
+
+    const insights = this.sessionInsights(gameId);
+    const elapsed = Math.round((Date.now() - session.startedAt) / 1000);
+    if (!insights || insights.sessions < 3) return { elapsed, median: null, ratio: null };
+
+    return {
+      elapsed,
+      median: insights.medianSeconds,
+      longest: insights.longestSeconds,
+      // Past 1 means this run is already longer than half your sessions here.
+      ratio: elapsed / insights.medianSeconds,
+      // Only ever true once, and worth knowing.
+      personalBest: elapsed > insights.longestSeconds
+    };
+  }
+
+  /**
    * Everything the end-of-year poster needs, computed locally.
    */
   yearInReview(year = new Date().getFullYear()) {

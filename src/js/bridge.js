@@ -59,6 +59,8 @@
     windowMaterial: 'mica', globalHotkeyEnabled: true, globalHotkey: 'Control+Shift+Space',
     streamerMode: false, overlayEnabled: false, handheldMode: 'auto', viewTransitions: true,
     attractMode: true, evolvingArt: true, peerName: '', sharePlaying: true,
+    sessionGhost: true, windDownHour: '',
+    detectOtherLaunchers: false,
     rendezvousUrl: '', remoteSharing: false,
     lastRoute: 'games', autoCheckUpdates: true
     // peerId, windowBounds and windowMaximized are machine state, not
@@ -310,6 +312,11 @@
       async yearInReview(year) {
         return { year: year || new Date().getFullYear(), sessions: 0, totalSeconds: 0, titles: [], topTitle: null };
       },
+      async playMap({ weeks = 26 } = {}) {
+        return { grid: Array.from({ length: 7 }, () => new Array(24).fill(0)), peak: 1, totalSeconds: 0, sessions: 0, weeks };
+      },
+      async ghost() { return null; },
+      async foreign() { return { games: [], errors: [], scannedAt: Date.now(), reason: 'not-enabled' }; },
       async saveBackups() { return []; },
       async backupSaves() { return { ok: false, reason: 'no-saves' }; },
       async restoreSave() { return { ok: false, error: 'Not available in the browser preview.' }; },

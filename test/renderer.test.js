@@ -1,0 +1,212 @@
+'use strict';
+/**
+ * The renderer's pure logic.
+ *
+ * Twenty-nine files lived in src/js with one of them tested, despite a good
+ * deal of it being ordinary functions over ordinary data. None of this needs a
+ * DOM: the modules hang themselves off `window`, so a stub is enough to load
+ * them and call the parts that only take arguments and return values.
+ *
+ * What is deliberately not here: anything that draws. Those are verified by
+ * running the launcher, because a test asserting an SVG string matches another
+ * SVG string tells you the file has not changed, not that it is right.
+ */
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+/* --- A window, minus a document ------------------------------------------ */
+
+global.window = global.window || {};
+// Node ships a read-only `navigator`; i18n only reads `.language` from it.
+// i18n stamps a lang attribute on load; nothing else touches the document.
+global.document = global.document || { documentElement: { setAttribute() {} } };
+
+require('../src/js/util.js');
+require('../src/js/i18n.js');
+require('../src/js/art.js');
+
+const BN = global.window.BN;
+
+/* --- Formatters ----------------------------------------------------------- */
+
+test('bytes reads at the scale a person would say it', () => {
+  assert.equal(BN.util.bytes(0), '0 B');
+  assert.equal(BN.util.bytes(999), '999 B');
+  assert.match(BN.util.bytes(1024), /1.0 KB/);
+  assert.match(BN.util.bytes(90 * 1024 ** 3), /90.0 GB/);
+});
+
+test('duration drops the units that would be noise', () => {
+  assert.match(BN.util.duration(45), /45s/);
+  assert.match(BN.util.duration(3600), /1h/);
+  assert.match(BN.util.duration(3660), /1h 1m/);
+  // A four hour session should not be reported in seconds.
+  assert.ok(!/\d+s/.test(BN.util.duration(4 * 3600 + 62)));
+});
+
+test('initials handle one word, two, and nothing', () => {
+  assert.equal(BN.util.initials('Sam'), 'S');
+  assert.equal(BN.util.initials('Sam Vale'), 'SV');
+  assert.equal(BN.util.initials('ash_fall'), 'AF', 'underscores separate too');
+  assert.equal(BN.util.initials(''), '?');
+  assert.equal(BN.util.initials(undefined), '?');
+});
+
+test('esc closes the holes that matter in an attribute or a body', () => {
+  const nasty = '<img src=x onerror="alert(1)">';
+  const escaped = BN.util.esc(nasty);
+  assert.ok(!escaped.includes('<'), 'no raw angle brackets survive');
+  assert.ok(!escaped.includes('"'), 'nor a quote that could end an attribute');
+});
+
+/* --- The seeded PRNG ------------------------------------------------------ */
+
+test('the same seed always gives the same sequence', () => {
+  const a = BN.util.rng(12345);
+  const b = BN.util.rng(12345);
+  const first = [a(), a(), a()];
+  const second = [b(), b(), b()];
+  assert.deepEqual(first, second, 'art must look identical on every machine');
+});
+
+test('different seeds diverge', () => {
+  const a = BN.util.rng(1);
+  const b = BN.util.rng(2);
+  assert.notEqual(a(), b());
+});
+
+test('the sequence stays inside zero and one', () => {
+  const rand = BN.util.rng(99);
+  for (let i = 0; i < 500; i++) {
+    const value = rand();
+    assert.ok(value >= 0 && value < 1, `${value} is outside the range`);
+  }
+});
+
+test('hashString is stable and spreads', () => {
+  assert.equal(BN.util.hashString('eclipse-protocol'), BN.util.hashString('eclipse-protocol'));
+  assert.notEqual(BN.util.hashString('ashfall'), BN.util.hashString('tidebreaker'));
+});
+
+/* --- Translation ---------------------------------------------------------- */
+
+test('a known key resolves and an unknown one returns itself', () => {
+  assert.equal(BN.t('action.play'), 'Play');
+  // A visible key in the UI is a bug report; an empty label is not.
+  assert.equal(BN.t('nothing.here'), 'nothing.here');
+});
+
+test('placeholders are filled, and unknown ones are left alone', () => {
+  assert.equal(BN.t('status.download', { size: '90 GB' }), '90 GB download');
+  assert.equal(BN.t('status.download', {}), '{size} download');
+});
+
+test('plurals pick the right form', () => {
+  assert.equal(BN.i18n.plural('updates.available', 1), '1 update available');
+  assert.equal(BN.i18n.plural('updates.available', 3), '3 updates available');
+});
+
+test('a locale with no catalog falls back to English rather than breaking', () => {
+  BN.i18n.setLocale('xx');
+  assert.equal(BN.t('action.play'), 'Play');
+  BN.i18n.setLocale('en');
+});
+
+test('a registered locale overrides only what it defines', () => {
+  BN.i18n.register('fr', { 'action.play': 'Jouer' });
+  BN.i18n.setLocale('fr');
+  assert.equal(BN.t('action.play'), 'Jouer', 'the translated key');
+  assert.equal(BN.t('action.close'), 'Close', 'and English for the rest');
+  BN.i18n.setLocale('en');
+});
+
+/* --- Art ------------------------------------------------------------------ */
+
+/**
+ * Every gradient and filter gets a unique id per call, so two pieces of art on
+ * one page cannot capture each other's `url(#...)` references. That id is
+ * random by design, so determinism is a claim about the geometry.
+ */
+const geometry = (svg) => svg.replace(/bn[a-z0-9]{4,10}-/g, 'id-');
+
+test('the same title always draws the same art', () => {
+  const options = { seed: 7331, hue: 212, motif: 'city', w: 400, h: 300, detail: 0.8 };
+  assert.equal(geometry(BN.art.keyArt(options)), geometry(BN.art.keyArt(options)));
+});
+
+const skyId = (svg) => /id="(bn[a-z0-9]+)-sky"/.exec(svg)[1];
+
+test('two different pieces of art never share a gradient id', () => {
+  // This is the collision that would actually show: on one page, the first
+  // definition wins for both, so two pieces sharing an id would mean one of
+  // them drawing the other's sky.
+  const base = { hue: 212, motif: 'city', w: 400, h: 300, detail: 0.8 };
+  const ids = new Set();
+  for (let seed = 0; seed < 40; seed++) ids.add(skyId(BN.art.keyArt({ ...base, seed })));
+  assert.equal(ids.size, 40, 'every distinct piece got its own id');
+});
+
+test('identical art is drawn once and reused', () => {
+  const options = { seed: 90210, hue: 212, motif: 'city', w: 400, h: 300, detail: 0.8 };
+  const first = BN.art.keyArt(options);
+  assert.equal(BN.art.keyArt(options), first, 'the same string, ids and all');
+  // Sharing ids here is safe precisely because the definitions are identical.
+  assert.equal(skyId(first), skyId(BN.art.keyArt(options)));
+});
+
+test('the cache is bounded and can be emptied', () => {
+  BN.art.keyArt.clearCache();
+  const options = { seed: 5150, hue: 200, motif: 'sea', w: 200, h: 200, detail: 0.4 };
+  const before = skyId(BN.art.keyArt(options));
+
+  // Push well past the limit so the entry above is evicted.
+  for (let seed = 1000; seed < 1200; seed++) BN.art.keyArt({ ...options, seed });
+
+  assert.notEqual(skyId(BN.art.keyArt(options)), before, 'it was redrawn, not held forever');
+});
+
+test('a different seed draws something else', () => {
+  const base = { hue: 212, motif: 'city', w: 400, h: 300, detail: 0.8 };
+  assert.notEqual(geometry(BN.art.keyArt({ ...base, seed: 1 })), geometry(BN.art.keyArt({ ...base, seed: 2 })));
+});
+
+test('every motif renders', () => {
+  for (const motif of BN.art.MOTIFS) {
+    const svg = BN.art.keyArt({ seed: 42, hue: 200, motif, w: 300, h: 200, detail: 0.6 });
+    assert.match(svg, /^\s*<svg/, `${motif} produced an svg`);
+    assert.ok(svg.includes('</svg>'), `${motif} closed it`);
+  }
+});
+
+test('maturity rises with playtime and settles', () => {
+  const at = (hours) => BN.art.maturity({ playtimeSeconds: hours * 3600 });
+  assert.equal(at(0), 0);
+  assert.ok(at(1) > 0 && at(1) < at(10), 'the first hour is visible');
+  assert.ok(at(10) < at(50));
+  assert.equal(at(50), 1, 'and it tops out rather than growing forever');
+  assert.equal(at(500), 1);
+});
+
+test('a played-in title gains sky', () => {
+  const stars = (maturity) =>
+    (BN.art.keyArt({ seed: 5, hue: 200, motif: 'city', w: 400, h: 300, detail: 0.8, maturity }).match(/<circle/g) || [])
+      .length;
+  assert.ok(stars(1) > stars(0), 'more of the same place, not a different one');
+});
+
+test('logo renders at any size and stays square', () => {
+  for (const size of [16, 64, 256]) {
+    const svg = BN.art.logo(size);
+    assert.ok(svg.includes(`width="${size}"`) && svg.includes(`height="${size}"`));
+  }
+});
+
+/* --- QR, which the handoff depends on ------------------------------------- */
+
+require('../src/js/qr.js');
+
+test('a handoff link encodes and carries a quiet zone', () => {
+  const svg = BN.qr.svg('blacknight://handoff?host=192.168.1.20&port=8431&code=K7QP2M');
+  assert.match(svg, /^<svg/);
+  assert.ok(svg.length > 500, 'a real symbol, not an empty one');
+});

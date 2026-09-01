@@ -49,6 +49,25 @@ jobs:
         shell: bash
         run: node scripts/ci-annotate.js test-output.txt
 
+      # The services have their own suite: it starts a real server on an
+      # ephemeral port and talks to it over a socket, so it cannot share a
+      # process with the launcher's tests.
+      - name: Test the services
+        shell: bash
+        run: |
+          set -o pipefail
+          cd server && node --test --test-timeout=60000 2>&1 | tee ../server-output.txt
+
+      - name: Surface the services failure
+        if: failure()
+        shell: bash
+        run: node scripts/ci-annotate.js server-output.txt
+
+      # A launcher that takes two seconds to paint is a launcher people stop
+      # opening. This fails the build rather than letting the number drift.
+      - name: Check the performance budget
+        run: npm run check:budget
+
       # The catalog is hosted, so a bad field should fail here rather than on
       # someone's machine.
       - name: Validate the catalog
@@ -57,5 +76,5 @@ jobs:
       - name: Check every file parses
         shell: bash
         run: |
-          find src electron scripts test -name '*.js' -print0 \
+          find src electron scripts test server -name '*.js' -not -path '*/node_modules/*' -print0 \
             | xargs -0 -n1 node --check

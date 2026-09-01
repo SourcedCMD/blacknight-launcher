@@ -122,7 +122,47 @@
    * @param {number} opts.w      viewBox width
    * @param {number} opts.h      viewBox height
    */
-  function keyArt({ seed = 1, hue = 210, motif = 'city', w = 1600, h = 900, detail = 1, maturity = 0 } = {}) {
+  /**
+   * Art already drawn, kept so a re-render is a map lookup.
+   *
+   * The generator is a few thousand string concatenations and a hundred-odd
+   * PRNG draws per piece, and the library re-renders on every filter keystroke,
+   * every sort change and every tab return - drawing the same twenty thumbnails
+   * each time. Since the output is a pure function of the options, the second
+   * request for a piece can only ever produce what the first did.
+   *
+   * Bounded, because a long session browsing a large store would otherwise
+   * hold every piece of art it ever showed. Oldest out first: Map iterates in
+   * insertion order, so the first key is the least recently added.
+   *
+   * One consequence worth naming: a cached piece reuses its gradient ids, so
+   * the same art twice on one page yields duplicate ids. References resolve to
+   * the first definition, and the definitions are identical, so it draws
+   * correctly - it is the reason the cache can return the string unchanged
+   * rather than having to rewrite ids on the way out.
+   */
+  const CACHE_LIMIT = 120;
+  const cache = new Map();
+
+  function keyArt(options = {}) {
+    const key = JSON.stringify([
+      options.seed ?? 1, options.hue ?? 210, options.motif ?? 'city',
+      options.w ?? 1600, options.h ?? 900, options.detail ?? 1, options.maturity ?? 0
+    ]);
+
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+
+    const svg = drawKeyArt(options);
+    if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value);
+    cache.set(key, svg);
+    return svg;
+  }
+
+  /** Throws away everything drawn so far. Called when the art settings change. */
+  keyArt.clearCache = () => cache.clear();
+
+  function drawKeyArt({ seed = 1, hue = 210, motif = 'city', w = 1600, h = 900, detail = 1, maturity = 0 } = {}) {
     const id = nextId();
     const r = rng(seed);
     const m = MOTIFS.includes(motif) ? motif : MOTIFS[Math.floor(r() * MOTIFS.length)];

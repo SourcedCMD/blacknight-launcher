@@ -255,3 +255,130 @@ test('a year with no play does not throw', () => {
   assert.equal(review.sessions, 0);
   assert.deepEqual(review.titles, []);
 });
+
+/* --- The night map ------------------------------------------------------- */
+
+/** A local timestamp for a given weekday and hour in the recent past. */
+function momentAt({ daysAgo, hour, minute = 0 }) {
+  const at = new Date();
+  at.setDate(at.getDate() - daysAgo);
+  at.setHours(hour, minute, 0, 0);
+  return at.getTime();
+}
+
+test('a session lands in the hour it was played, on the right day', () => {
+  const library = makeLibrary();
+  const ended = momentAt({ daysAgo: 3, hour: 21, minute: 30 });
+  library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds: 1800, at: ended });
+
+  const { grid } = library.playMap();
+  const day = (new Date(ended).getDay() + 6) % 7;
+
+  assert.equal(Math.round(grid[day][21]), 1800, 'the whole half hour is in the 21:00 cell');
+  assert.equal(grid[day][20], 0);
+  assert.equal(grid[day][22], 0);
+});
+
+test('a long session is spread across the hours it actually covered', () => {
+  const library = makeLibrary();
+  // 19:30 to 22:30: half an hour in 19, a full hour in 20 and 21, half in 22.
+  const ended = momentAt({ daysAgo: 2, hour: 22, minute: 30 });
+  library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds: 3 * 3600, at: ended });
+
+  const { grid } = library.playMap();
+  const day = (new Date(ended).getDay() + 6) % 7;
+
+  assert.equal(Math.round(grid[day][19]), 1800);
+  assert.equal(Math.round(grid[day][20]), 3600);
+  assert.equal(Math.round(grid[day][21]), 3600);
+  assert.equal(Math.round(grid[day][22]), 1800);
+});
+
+test('a session over midnight carries into the next day', () => {
+  const library = makeLibrary();
+  // 23:00 to 01:00.
+  const ended = momentAt({ daysAgo: 2, hour: 1 });
+  library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds: 2 * 3600, at: ended });
+
+  const { grid } = library.playMap();
+  const endDay = (new Date(ended).getDay() + 6) % 7;
+  const startDay = (endDay + 6) % 7;
+
+  assert.equal(Math.round(grid[startDay][23]), 3600, 'the hour before midnight');
+  assert.equal(Math.round(grid[endDay][0]), 3600, 'and the hour after, on the next day');
+});
+
+test('the map only looks back as far as it was asked to', () => {
+  const library = makeLibrary();
+  library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds: 3600, at: momentAt({ daysAgo: 3, hour: 12 }) });
+  library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds: 3600, at: momentAt({ daysAgo: 200, hour: 12 }) });
+
+  assert.equal(library.playMap({ weeks: 4 }).sessions, 1);
+  assert.equal(library.playMap({ weeks: 52 }).sessions, 2);
+});
+
+test('the map can be narrowed to one title', () => {
+  const library = makeLibrary();
+  library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds: 3600, at: momentAt({ daysAgo: 1, hour: 14 }) });
+  library.addJournalEntry({ gameId: 'other', title: 'Other', seconds: 3600, at: momentAt({ daysAgo: 1, hour: 15 }) });
+
+  assert.equal(library.playMap({ gameId: 'demo' }).sessions, 1);
+  assert.equal(library.playMap().sessions, 2);
+});
+
+test('a corrupt entry claiming an absurd length cannot spin the loop forever', () => {
+  const library = makeLibrary();
+  library.addJournalEntry({
+    gameId: 'demo', title: 'Demo',
+    seconds: 400 * 24 * 3600, // over a year in one sitting
+    at: momentAt({ daysAgo: 1, hour: 12 })
+  });
+  // The guard caps the walk; what matters is that this returns at all.
+  const map = library.playMap();
+  assert.ok(map.grid.length === 7);
+});
+
+test('an empty history gives an empty grid rather than a division by zero', () => {
+  const map = makeLibrary().playMap();
+  assert.equal(map.sessions, 0);
+  assert.equal(map.peak, 1, 'so a shade calculation cannot divide by zero');
+  assert.equal(map.grid.flat().reduce((a, b) => a + b, 0), 0);
+});
+
+/* --- Ghost sessions ------------------------------------------------------ */
+
+test('there is no ghost when nothing is running', () => {
+  assert.equal(makeLibrary().ghost('demo'), null);
+});
+
+test('a ghost reports elapsed time but no comparison until there is history', () => {
+  const library = makeLibrary();
+  library.sessions.set('demo', { pid: 1, startedAt: Date.now() - 60000 });
+
+  const ghost = library.ghost('demo');
+  assert.ok(ghost.elapsed >= 59 && ghost.elapsed <= 62);
+  assert.equal(ghost.median, null, 'two sessions is not a pattern');
+});
+
+test('a ghost compares the current run against the usual one', () => {
+  const library = makeLibrary();
+  for (const seconds of [1800, 3600, 5400]) {
+    library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds, at: Date.now() - 86400000 });
+  }
+  library.sessions.set('demo', { pid: 1, startedAt: Date.now() - 3600 * 1000 });
+
+  const ghost = library.ghost('demo');
+  assert.equal(ghost.median, 3600, 'the middle of the three');
+  assert.ok(Math.abs(ghost.ratio - 1) < 0.02, 'this run is right about typical');
+  assert.equal(ghost.personalBest, false);
+});
+
+test('a ghost knows when the current run is the longest yet', () => {
+  const library = makeLibrary();
+  for (const seconds of [1800, 3600, 5400]) {
+    library.addJournalEntry({ gameId: 'demo', title: 'Demo', seconds, at: Date.now() - 86400000 });
+  }
+  library.sessions.set('demo', { pid: 1, startedAt: Date.now() - 6000 * 1000 });
+
+  assert.equal(library.ghost('demo').personalBest, true);
+});
