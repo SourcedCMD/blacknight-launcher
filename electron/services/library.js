@@ -1086,6 +1086,7 @@ class Library {
   _beginSession(gameId, pid) {
     this.sessions.set(gameId, { pid, startedAt: Date.now() });
     this.downloader.setGameRunning?.(true);
+    this.presenceCount?.start(gameId);
     this.onSessionChange?.(gameId, true);
     const entry = this._entry(gameId);
     entry.lastPlayed = Date.now();
@@ -1098,6 +1099,7 @@ class Library {
     const session = this.sessions.get(gameId);
     if (!session) return { ok: false };
     this.sessions.delete(gameId);
+    this.presenceCount?.stop(gameId);
     const entry = this._entry(gameId);
     const seconds = Math.round((Date.now() - session.startedAt) / 1000);
     entry.playtimeSeconds += seconds;

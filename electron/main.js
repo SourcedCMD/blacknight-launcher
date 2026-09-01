@@ -26,6 +26,10 @@ const isDev = process.argv.includes('--dev');
 // never writes over the state of an installed copy.
 if (isDev) app.setPath('userData', `${app.getPath('userData')} (dev)`);
 
+// The smoke run gets a throwaway profile so it never touches a real library,
+// and so every run starts from identical state.
+if (process.env.BN_USER_DATA) app.setPath('userData', process.env.BN_USER_DATA);
+
 let win = null;
 let tray = null;
 let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, peers, achievements, overlay, handoff, log;
@@ -229,6 +233,9 @@ function bootServices() {
   auth = new Auth(dataDir);
   downloader = new Downloader(dataDir, settings);
   library = new Library(dataDir, catalog, downloader, settings, { allowSimulated: !app.isPackaged });
+  // Attached rather than constructor-injected so the Library keeps working
+  // untouched in tests, where nothing should be beating at anything.
+  library.presenceCount = new (require('./services/presence-count').PresenceCount)(settings, log);
   updates = new Updates({
     packaged: app.isPackaged,
     autoCheck: settings.get('autoCheckUpdates') !== false,
@@ -458,7 +465,22 @@ function createWindow() {
     }
   });
 
+  const smoke = process.argv.includes('--smoke-test') || process.env.BN_SMOKE === '1';
   win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
+
+  // Told over IPC rather than a query string: loadFile's query does not survive
+  // to `location.search` here, and a message the renderer already knows how to
+  // receive is one fewer mechanism than a URL nobody else reads.
+  if (smoke) {
+    win.webContents.once('did-finish-load', () => {
+      // A beat after load so boot() has finished wiring everything up.
+      setTimeout(() => win.webContents.send('smoke:run'), 2500);
+    });
+  }
+
+  // Console output from the renderer has to be forwarded, or the smoke run's
+  // verdict never reaches the process watching for it.
+
 
   win.once('ready-to-show', () => {
     if (settings.get('windowMaximized')) win.maximize();
@@ -725,6 +747,84 @@ function registerIpc() {
    * not choose, and the extension is fixed so this cannot be talked into
    * dropping a .bat or a .ps1 somewhere convenient.
    */
+  /** The same as save-text, fixed to .json. */
+  handle('app:save-json', async (text, suggested) => {
+    try {
+      const safe = String(suggested || 'blacknight.json').replace(/[^\w.-]/g, '_');
+      const picked = await dialog.showSaveDialog(win, {
+        defaultPath: path.join(app.getPath('documents'), safe.endsWith('.json') ? safe : `${safe}.json`),
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+      if (path.extname(picked.filePath).toLowerCase() !== '.json') {
+        return { ok: false, error: 'That needs to be saved as a .json file.' };
+      }
+      fs.writeFileSync(picked.filePath, String(text), 'utf8');
+      return { ok: true, path: picked.filePath };
+    } catch (err) {
+      log.warn('transfer', 'Could not save', err);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * Reads one JSON file the user picked.
+   *
+   * The dialog is the authorisation, and the size cap is there because this
+   * hands the contents to the renderer: a settings export is a few kilobytes,
+   * and anything claiming to be one that is megabytes long is not one.
+   */
+  handle('app:open-json', async () => {
+    try {
+      const picked = await dialog.showOpenDialog(win, {
+        properties: ['openFile'],
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      if (picked.canceled || !picked.filePaths?.length) return { ok: false, cancelled: true };
+
+      const file = picked.filePaths[0];
+      const { size } = fs.statSync(file);
+      if (size > 512 * 1024) return { ok: false, error: 'That file is far too large to be a settings export.' };
+
+      return { ok: true, text: fs.readFileSync(file, 'utf8'), path: file };
+    } catch (err) {
+      log.warn('transfer', 'Could not read', err);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * The changelog that shipped with this build.
+   *
+   * Read from disk rather than compiled into the renderer so there is one copy
+   * of it, and a release cannot ship a stale in-app copy of its own notes.
+   */
+  /**
+   * The smoke run reporting a line.
+   *
+   * Straight to stdout, where the process that started the app is watching.
+   * Reported over IPC rather than scraped from console output: the console
+   * event's shape has changed between Electron versions, and a test harness
+   * that silently stops reporting is worse than no harness.
+   */
+  handle('app:smoke-report', (line) => {
+    process.stdout.write(`SMOKE: ${String(line).slice(0, 500)}
+`);
+    return { ok: true };
+  });
+
+  handle('app:changelog', () => {
+    for (const candidate of [
+      path.join(__dirname, '..', 'CHANGELOG.md'),
+      path.join(process.resourcesPath || '', 'CHANGELOG.md')
+    ]) {
+      try {
+        return { ok: true, text: fs.readFileSync(candidate, 'utf8').slice(0, 200000) };
+      } catch { /* try the next */ }
+    }
+    return { ok: false, error: 'not-found' };
+  });
+
   handle('app:save-text', async (text, suggested) => {
     try {
       const safe = String(suggested || 'blacknight.html').replace(/[^\w.-]/g, '_');
@@ -997,6 +1097,18 @@ function parseDeepLink(url) {
     const rest = decodeURIComponent(parsed.pathname || '').replace(/^\/+/, '');
 
     if (action === 'game' && rest) return { type: 'game', gameId: rest };
+
+    /**
+     * Actions, as opposed to navigation.
+     *
+     * A link that installs or launches something is a link that does work on
+     * the machine, so these carry an intent the renderer has to confirm before
+     * acting. Parsing it here and confirming there keeps the decision in the
+     * one place that can actually show somebody what they are agreeing to.
+     */
+    if ((action === 'install' || action === 'play') && rest) {
+      return { type: 'intent', intent: action, gameId: rest };
+    }
     if (action === 'handoff') {
       return {
         type: 'handoff',
@@ -1005,7 +1117,7 @@ function parseDeepLink(url) {
         code: parsed.searchParams.get('code')
       };
     }
-    if (['games', 'store', 'plus', 'downloads', 'settings', 'profile'].includes(action)) {
+    if (['games', 'store', 'plus', 'downloads', 'settings', 'profile', 'journal', 'achievements'].includes(action)) {
       return { type: 'route', route: action };
     }
     return null;
@@ -1110,6 +1222,7 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.unregisterAll();
     downloader?.shutdown();
     presence?.disconnect();
+    library?.presenceCount?.stopAll();
     peers?.stop();
     overlay?.stop();
     handoff?.stop();

@@ -254,3 +254,105 @@ h3.display { font-size: 1.1rem; letter-spacing: 0.1em; }
 .stagger > *:nth-child(7) { animation-delay: 230ms; }
 .stagger > *:nth-child(8) { animation-delay: 265ms; }
 .stagger > *:nth-child(n + 9) { animation-delay: 300ms; }
+
+/* =========================================================================
+   Respecting the system's accessibility settings.
+
+   Windows has had "show transparency" and a high-contrast mode for years, and
+   an app that ignores them is unusable for the people who switched them on -
+   which is exactly the group least able to work around it.
+
+   These live last so they win over the component rules without any of them
+   needing to know these exist.
+   ========================================================================= */
+
+/* --- Transparency turned off -------------------------------------------- */
+
+/**
+ * Blur is decoration. When the system says no transparency, every blurred
+ * surface becomes an opaque one, because a translucent panel over moving
+ * content is the specific thing that setting exists to stop.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .modal,
+  .modal-backdrop,
+  .toast,
+  .titlebar,
+  .sidebar,
+  .palette,
+  .dropdown,
+  .popover,
+  .hero-fade,
+  [class*='glass'] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* The surfaces above lean on translucency for their background, so they
+     need a solid one rather than simply losing the blur and going see-through. */
+  .modal,
+  .toast,
+  .titlebar,
+  .sidebar,
+  .palette,
+  .dropdown,
+  .popover {
+    background: var(--bg-2) !important;
+  }
+
+  .modal-backdrop {
+    background: rgb(0 0 0 / 0.82) !important;
+  }
+}
+
+/* --- High contrast / forced colours -------------------------------------- */
+
+/**
+ * In forced-colors mode the OS replaces the palette outright, and anything
+ * carrying meaning through colour alone disappears. What matters here is that
+ * borders survive: the launcher separates a great deal with subtle background
+ * differences, and those all collapse to the same colour.
+ */
+@media (forced-colors: active) {
+  .card,
+  .set-row,
+  .modal,
+  .toast,
+  .badge,
+  .foreign-card,
+  .ghost,
+  .btn {
+    border: 1px solid CanvasText;
+  }
+
+  /* Generated art and decorative gradients carry no information and become
+     noise once the palette is replaced. */
+  .hero-art,
+  .fx,
+  #fx,
+  .ambient,
+  .plus-flare {
+    display: none;
+  }
+
+  /* Status is shown by colour in a few places; the border keeps the shape
+     legible when that colour is taken away. */
+  .dot,
+  .dot-live,
+  .playing-dot i {
+    outline: 1px solid CanvasText;
+  }
+
+  /* The night map is a colour scale, which forced colours flattens entirely.
+     An outline per cell at least preserves the grid. */
+  .nm-cell {
+    outline: 1px solid CanvasText;
+  }
+
+  /* Keep focus visible: the app's focus ring is a custom colour that the OS
+     will not necessarily preserve. */
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+}

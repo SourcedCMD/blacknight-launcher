@@ -22,6 +22,7 @@
     "test:server": "cd server && node --test --test-timeout=60000",
     "check:budget": "node scripts/check-budget.js",
     "art:snapshots": "node scripts/art-snapshots.js --write",
+    "smoke": "node scripts/smoke.js",
     "services": "node server/index.js",
     "lint": "eslint .",
     "web": "node scripts/dev-server.js",

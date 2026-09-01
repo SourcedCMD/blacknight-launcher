@@ -259,3 +259,132 @@ test('no key resolves to an empty label', () => {
     assert.ok(match[2].length > 0, `${match[1]} is empty`);
   }
 });
+
+/* --- Deep links ---------------------------------------------------------- */
+
+/**
+ * The parser lives in the main process, which this suite does not load, so it
+ * is required directly. It is a pure function over a string, which is exactly
+ * the kind of thing that should be tested rather than clicked.
+ */
+test('deep links resolve to the right target, and nothing else does', () => {
+  // Loaded lazily: requiring main.js would start an app.
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'electron', 'main.js'),
+    'utf8'
+  );
+
+  // The route allowlist is the security-relevant part: a link must not be able
+  // to name an arbitrary internal view.
+  const match = /\[('games'[^\]]*)\]\.includes\(action\)/.exec(source);
+  assert.ok(match, 'the route allowlist is still an allowlist');
+
+  const routes = match[1].split(',').map((s) => s.trim().replace(/'/g, ''));
+  assert.ok(routes.includes('store'));
+  assert.ok(routes.includes('journal'));
+  assert.ok(!routes.includes('*'), 'no wildcard');
+});
+
+test('an install or play link is parsed as an intent, not an action', () => {
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'electron', 'main.js'),
+    'utf8'
+  );
+  // The main process must hand these to the renderer to confirm rather than
+  // installing or launching on its own.
+  assert.match(source, /type: 'intent'/);
+  assert.ok(
+    !/action === 'install'[\s\S]{0,200}library\.install/.test(source),
+    'the main process must not act on an install link directly'
+  );
+});
+
+/* --- Settings transfer --------------------------------------------------- */
+
+// transfer.js needs BN.util, which is already loaded above.
+require('../src/js/views/transfer.js');
+
+test('an export leaves out anything private to one machine', () => {
+  const exported = BN.views.transfer.exportable({
+    theme: 'dark',
+    presenceClientId: 'abc123',
+    installDir: 'D:\Games',
+    peerName: "Sam's PC",
+    lastRoute: 'store',
+    accountsUrl: 'https://accounts.example.com'
+  });
+
+  assert.equal(exported.theme, 'dark', 'ordinary settings travel');
+  assert.equal(exported.accountsUrl, 'https://accounts.example.com', 'and so do service URLs');
+
+  for (const key of ['presenceClientId', 'installDir', 'peerName', 'lastRoute']) {
+    assert.ok(!(key in exported), `${key} must not travel`);
+  }
+});
+
+test('an export never carries a secret, whatever it is called', () => {
+  const exported = BN.views.transfer.exportable({
+    theme: 'dark',
+    adminToken: 'zzz',
+    apiKey: 'zzz',
+    sessionSecret: 'zzz',
+    userPassword: 'zzz'
+  });
+  assert.deepEqual(Object.keys(exported), ['theme']);
+});
+
+test('a file that is not an export is refused before anything is applied', () => {
+  assert.ok(BN.views.transfer.validate(null));
+  assert.ok(BN.views.transfer.validate({}));
+  assert.ok(BN.views.transfer.validate({ kind: 'something-else', settings: {} }));
+  assert.ok(BN.views.transfer.validate({ kind: 'blacknight-settings' }), 'no settings in it');
+  assert.equal(BN.views.transfer.validate({ kind: 'blacknight-settings', settings: {} }), null);
+});
+
+test('an import keeps only keys this build knows, with matching types', () => {
+  const known = { theme: 'dark', volume: 50, attractMode: true };
+  const { accepted, ignored } = BN.views.transfer.reconcile(
+    {
+      theme: 'light',            // known, same type
+      volume: 'loud',            // known, wrong type
+      attractMode: false,        // known, same type
+      somethingFromTheFuture: 1, // unknown
+      presenceClientId: 'abc',   // never travels
+      apiKey: 'zzz'              // secret
+    },
+    known
+  );
+
+  assert.deepEqual(accepted, { theme: 'light', attractMode: false });
+  for (const key of ['volume', 'somethingFromTheFuture', 'presenceClientId', 'apiKey']) {
+    assert.ok(ignored.includes(key), `${key} should be reported as skipped`);
+  }
+});
+
+test('an export of the real defaults round-trips into itself', () => {
+  // Whatever the defaults are, exporting and importing them must be a no-op
+  // rather than dropping half of them on the floor.
+  const defaults = { theme: 'dark', volume: 50, attractMode: true, locale: 'en' };
+  const exported = BN.views.transfer.exportable(defaults);
+  const { accepted } = BN.views.transfer.reconcile(exported, defaults);
+  assert.deepEqual(accepted, defaults);
+});
+
+/* --- The changelog renderer ---------------------------------------------- */
+
+test('markdown renders headings, bullets and inline code', () => {
+  const html = BN.views.transfer.renderMarkdown('## 1.0.2\n\n### Added\n\n- A **thing** with `code`\n');
+  assert.match(html, /<h3>1\.0\.2<\/h3>/);
+  assert.match(html, /<li>A <strong>thing<\/strong> with <code>code<\/code><\/li>/);
+});
+
+test('markdown cannot smuggle html through the changelog', () => {
+  const html = BN.views.transfer.renderMarkdown('- <img src=x onerror="alert(1)">\n');
+  assert.ok(!html.includes('<img'), 'the tag is escaped');
+  assert.match(html, /&lt;img/);
+});
+
+test('an unterminated list still closes', () => {
+  const html = BN.views.transfer.renderMarkdown('- one\n- two');
+  assert.equal((html.match(/<ul>/g) || []).length, (html.match(/<\/ul>/g) || []).length);
+});

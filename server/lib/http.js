@@ -116,4 +116,20 @@ class Router {
   }
 }
 
-module.exports = { Router, readJson, json, cors, MAX_BODY };
+/**
+ * The address a request came from.
+ *
+ * Behind a reverse proxy the socket address is the proxy, so the forwarded
+ * header is used when one is present - but only the first entry, and only when
+ * TRUST_PROXY is set. A client can send `X-Forwarded-For` itself, so trusting
+ * it unconditionally would let anyone forge their way around a rate limit.
+ */
+function clientAddress(req, trustProxy = process.env.TRUST_PROXY === '1') {
+  if (trustProxy) {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) return String(forwarded).split(',')[0].trim();
+  }
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+module.exports = { Router, readJson, json, cors, clientAddress, MAX_BODY };

@@ -1404,3 +1404,61 @@ kbd {
   .foreign-card { transition: none; }
   .foreign-card:hover { transform: none; }
 }
+
+/* --- Settings search ----------------------------------------------------- */
+
+.settings-search {
+  max-width: 260px;
+  /* Sits in the section head next to the title, not above the nav, so it is
+     obviously searching everything rather than the current tab. */
+  margin-left: auto;
+}
+
+.set-group-title {
+  margin: 22px 0 10px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.set-group-title:first-child { margin-top: 0; }
+
+/* --- The changelog modal ------------------------------------------------- */
+
+.changelog {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 8px;
+  line-height: 1.65;
+}
+
+.changelog h2,
+.changelog h3 {
+  margin: 20px 0 8px;
+  font-size: 0.95rem;
+  color: var(--text-1);
+}
+
+.changelog h2:first-child { margin-top: 0; }
+
+.changelog h4 {
+  margin: 16px 0 6px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-3);
+}
+
+.changelog ul { margin: 0 0 12px; padding-left: 20px; }
+.changelog li { margin-bottom: 5px; color: var(--text-2); font-size: 0.88rem; }
+.changelog p { margin: 0 0 10px; color: var(--text-2); font-size: 0.88rem; }
+
+.changelog code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.84em;
+  background: var(--bg-3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}

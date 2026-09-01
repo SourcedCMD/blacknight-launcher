@@ -3,10 +3,12 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const { Router, json, cors } = require('./lib/http');
+const { Router, json, cors, clientAddress } = require('./lib/http');
 const { Accounts } = require('./lib/accounts');
 const { Store } = require('./lib/store');
 const { upgrade } = require('./lib/ws');
+const { Limits } = require('./lib/limits');
+const { render } = require('./lib/dashboard');
 
 /**
  * The services the launcher already knows how to talk to.
@@ -16,7 +18,9 @@ const { upgrade } = require('./lib/ws');
  * that point at it are already there and empty.
  */
 
-const PORT = Number(process.env.PORT) || 8080;
+// Not `Number(x) || 8080`: PORT=0 is a legitimate request for an ephemeral
+// port, and zero is falsy, so that spelling silently binds 8080 instead.
+const PORT = process.env.PORT === undefined || process.env.PORT === '' ? 8080 : Number(process.env.PORT);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const CATALOG_FILE = process.env.CATALOG_FILE || path.join(__dirname, '..', 'electron', 'data', 'catalog.json');
 const ORIGIN = process.env.ORIGIN || 'https://sourcedcmd.github.io';
@@ -25,6 +29,33 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const accounts = new Accounts(DATA_DIR);
 const crashes = new Store(DATA_DIR, 'crashes', { items: [] });
+
+const limits = new Limits();
+// Counters for addresses nobody has seen in a while are dropped, so this does
+// not slowly become a list of everyone who has ever connected.
+const sweeper = setInterval(() => limits.sweep(), 5 * 60000);
+sweeper.unref();
+
+/**
+ * Applies a rate limit, replying 429 when it bites.
+ *
+ * Returns false when the caller should stop. Written as a guard rather than
+ * middleware because there are six routes and a guard is easier to read than
+ * a chain you have to hold in your head.
+ */
+function within(bucket, req, res) {
+  // The functional suite registers dozens of accounts from one address, which
+  // is exactly what these limits exist to stop. It runs with them off and the
+  // limits are covered by their own unit tests plus a dedicated server that
+  // runs with them on - rather than the alternative, which is loosening the
+  // production numbers until the tests pass.
+  if (process.env.RATE_LIMITS === 'off') return true;
+
+  const result = limits.take(bucket, clientAddress(req));
+  if (result.ok) return true;
+  json(res, 429, { error: 'Too many requests. Try again shortly.' }, { 'Retry-After': String(result.retryAfter) });
+  return false;
+}
 
 const log = (level, message, detail) => {
   const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} ${message}`;
@@ -52,7 +83,19 @@ router.get('/health', (req, res) => json(res, 200, { ok: true, uptime: Math.roun
 router.get('/catalog', (req, res) => {
   try {
     const doc = JSON.parse(fs.readFileSync(CATALOG_FILE, 'utf8'));
-    json(res, 200, doc, { 'Cache-Control': 'public, max-age=300' });
+
+    // Live counts are folded in here rather than fetched separately: the
+    // launcher already refreshes the catalog, and the store UI already reads
+    // `playersOnline` off a game. A title below the reporting floor simply
+    // does not gain the field, and the badge stays hidden.
+    const players = counts();
+    for (const game of doc.games || []) {
+      if (players[game.id]) game.playersOnline = players[game.id];
+    }
+
+    // Shorter than the catalog would otherwise be cached for, because the
+    // counts are the part that goes stale.
+    json(res, 200, doc, { 'Cache-Control': 'public, max-age=60' });
   } catch (err) {
     log('error', 'Catalog could not be read', err);
     json(res, 503, { error: 'Catalog unavailable' });
@@ -61,8 +104,41 @@ router.get('/catalog', (req, res) => {
 
 /* --- Accounts --------------------------------------------------------- */
 
-router.post('/auth/register', (req, res, { body }) => json(res, 200, accounts.register(body)));
-router.post('/auth/login', (req, res, { body }) => json(res, 200, accounts.signIn(body)));
+router.post('/auth/register', (req, res, { body }) => {
+  if (!within('register', req, res)) return;
+  json(res, 200, accounts.register(body));
+});
+/**
+ * Sign in.
+ *
+ * Two guards before the password is even hashed: a per-address ceiling,
+ * because scrypt is expensive and this endpoint is unauthenticated; and a
+ * per-account lockout, because that is what actually stops guessing.
+ *
+ * The lockout reply is identical in shape to a wrong password, so it still
+ * cannot be used to work out which accounts exist.
+ */
+router.post('/auth/login', (req, res, { body }) => {
+  if (!within('login', req, res)) return;
+
+  const locked = process.env.RATE_LIMITS === 'off' ? null : limits.locked(body.identifier);
+  if (locked) {
+    json(res, 429, { error: 'Too many attempts. Try again shortly.' }, { 'Retry-After': String(locked.retryAfter) });
+    return;
+  }
+
+  try {
+    const result = accounts.signIn(body);
+    limits.succeed(body.identifier);
+    json(res, 200, result);
+  } catch (err) {
+    if (err.status === 401) {
+      const record = limits.fail(body.identifier);
+      log('info', `Failed sign-in (${record.count} in a row)`);
+    }
+    throw err;
+  }
+});
 router.post('/auth/logout', (req, res) => json(res, 200, accounts.signOut(bearer(req))));
 
 router.get('/auth/session', (req, res) => {
@@ -73,6 +149,7 @@ router.get('/auth/session', (req, res) => {
 // Always 200: whether an address is registered is not something this endpoint
 // should be willing to confirm.
 router.post('/auth/reset/request', (req, res, { body }) => {
+  if (!within('reset', req, res)) return;
   const result = accounts.requestReset(body.email);
   log('info', `Password reset requested${result.token ? ' (token issued)' : ''}`);
   // The token is returned only so a mail service can be put in front of this.
@@ -115,6 +192,7 @@ router.post('/entitlements/grant', (req, res, { body }) => {
  * platform - and this is careful not to store more than arrived.
  */
 router.post('/crash', (req, res, { body }) => {
+  if (!within('crash', req, res)) return;
   const items = crashes.get('items');
   items.unshift({
     at: Date.now(),
@@ -131,14 +209,8 @@ router.post('/crash', (req, res, { body }) => {
   json(res, 200, { ok: true });
 });
 
-/** What the studio actually wants: crashes grouped by message. */
-router.get('/crash/summary', (req, res) => {
-  const admin = process.env.ADMIN_TOKEN;
-  if (!admin || bearer(req) !== admin) {
-    json(res, 403, { error: 'Forbidden' });
-    return;
-  }
-
+/** Crashes grouped by message and version, most common first. */
+function summarise() {
   const groups = new Map();
   for (const item of crashes.get('items')) {
     const key = `${item.message}|${item.version}`;
@@ -148,11 +220,114 @@ router.get('/crash/summary', (req, res) => {
     groups.set(key, group);
   }
 
-  json(res, 200, {
+  return {
     total: crashes.get('items').length,
     groups: [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 50)
-  });
+  };
+}
+
+const isAdmin = (req) => {
+  const admin = process.env.ADMIN_TOKEN;
+  return !!admin && bearer(req) === admin;
+};
+
+router.get('/crash/summary', (req, res) => {
+  if (!isAdmin(req)) {
+    json(res, 403, { error: 'Forbidden' });
+    return;
+  }
+  json(res, 200, summarise());
 });
+
+/**
+ * The same data with a face on it.
+ *
+ * Behind the same token as the JSON: a list of what is breaking, and in which
+ * version, is not something to leave open. The token can be given as a header
+ * or as `?token=` so the page can simply be opened in a browser - which is
+ * the only way a dashboard actually gets looked at.
+ */
+router.get('/crash/dashboard', (req, res, { url }) => {
+  const admin = process.env.ADMIN_TOKEN;
+  const supplied = bearer(req) || url.searchParams.get('token');
+  if (!admin || supplied !== admin) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Forbidden');
+    return;
+  }
+
+  const html = render(summarise());
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': Buffer.byteLength(html),
+    // A token in a query string should not be sat in a shared cache.
+    'Cache-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer'
+  });
+  res.end(html);
+});
+
+/* -------------------------------------------------------------------- */
+/* Live player counts                                                    */
+
+/**
+ * How many people are in each title right now.
+ *
+ * The launcher already knows when a game starts and stops; this is the only
+ * missing half of a number the store UI has been ready to show since it was
+ * written. Deliberately thin:
+ *
+ *   - A heartbeat carries a title id and an opaque client id, and nothing
+ *     else. No account, no address, no handle. Two people playing the same
+ *     game are indistinguishable here, which is the point.
+ *   - Entries expire. A launcher that is killed rather than closed stops
+ *     counting on its own within a couple of minutes, so a crash cannot
+ *     inflate the number forever.
+ *   - Counts are rounded once they are large, and suppressed while they are
+ *     tiny, because "3 playing" on a launch day is worse than saying nothing.
+ */
+const STALE_MS = 150000; // two and a half heartbeats
+const presence = new Map(); // gameId -> Map(clientId -> lastSeen)
+
+function heartbeat(gameId, clientId) {
+  if (!gameId || !clientId) return;
+  const seen = presence.get(gameId) || new Map();
+  seen.set(clientId, Date.now());
+  presence.set(gameId, seen);
+}
+
+function dropStale() {
+  const cutoff = Date.now() - STALE_MS;
+  for (const [gameId, seen] of presence) {
+    for (const [clientId, at] of seen) if (at < cutoff) seen.delete(clientId);
+    if (!seen.size) presence.delete(gameId);
+  }
+}
+
+/** Below the floor nothing is reported, so the field simply stays absent. */
+const FLOOR = 5;
+
+function counts() {
+  dropStale();
+  const out = {};
+  for (const [gameId, seen] of presence) {
+    if (seen.size < FLOOR) continue;
+    // Rounded so the number does not visibly tick with individual people.
+    out[gameId] = seen.size < 100 ? Math.round(seen.size / 5) * 5 : Math.round(seen.size / 50) * 50;
+  }
+  return out;
+}
+
+router.post('/presence', (req, res, { body }) => {
+  if (!within('default', req, res)) return;
+  heartbeat(String(body.gameId || '').slice(0, 64), String(body.clientId || '').slice(0, 64));
+  json(res, 200, { ok: true });
+});
+
+router.get('/presence', (req, res) => json(res, 200, { players: counts() }, { 'Cache-Control': 'public, max-age=30' }));
+
+const presenceSweeper = setInterval(dropStale, 60000);
+presenceSweeper.unref();
 
 /* -------------------------------------------------------------------- */
 /* Rendezvous                                                            */
@@ -232,13 +407,18 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(PORT, () => {
-  log('info', `BlackNight services on http://localhost:${PORT}`);
+  // The bound port, not the requested one - with PORT=0 they are different and
+  // the bound one is the only useful thing to print.
+  const bound = server.address().port;
+  log('info', `BlackNight services on http://localhost:${bound}`);
   log('info', `  catalog       GET  /catalog`);
   log('info', `  accounts      POST /auth/register, /auth/login, /auth/session`);
   log('info', `  entitlements  GET  /entitlements`);
   log('info', `  crashes       POST /crash`);
+  log('info', `  presence      GET  /presence`);
+  log('info', `  crashes       GET  /crash/dashboard?token=...`);
   log('info', `  rendezvous    WS   /rendezvous`);
   if (!process.env.ADMIN_TOKEN) log('warn', 'ADMIN_TOKEN is unset: granting and the crash summary are closed.');
 });
 
-module.exports = { server, accounts, router };
+module.exports = { server, accounts, router, limits, heartbeat, counts };

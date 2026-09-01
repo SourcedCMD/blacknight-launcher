@@ -30,6 +30,11 @@
   ];
 
   async function boot() {
+    // Registered before anything can go wrong and before the main process is
+    // due to ask. It cannot live in start(), which only runs once somebody is
+    // signed in - and a fresh profile lands on the auth screen instead.
+    BN.api.app.onSmoke?.(() => BN.smoke.run());
+
     const bar = $('#boot-bar i');
     const status = $('#boot-status');
     $('#boot-mark').innerHTML = BN.art.logo(132).replace('<svg ', '<svg class="boot-mark" ');
@@ -140,10 +145,16 @@
     // blacknight://game/<id> and blacknight://store, from the site or a chat.
     BN.api.app.onDeepLink?.((target) => {
       if (!target) return;
-      if (target.type === 'route') go(target.route);
-      else if (target.type === 'game') {
+      if (target.type === 'route') {
+        // Two of these are modals rather than routes.
+        if (target.route === 'journal') BN.views.journal.open();
+        else if (target.route === 'achievements') BN.views.achievements.open?.();
+        else go(target.route);
+      } else if (target.type === 'game') {
         go('store');
         setTimeout(() => BN.components.openDetail(target.gameId), 160);
+      } else if (target.type === 'intent') {
+        openIntent(target);
       } else if (target.type === 'handoff') {
         BN.views.handoff.receive(target);
       }
@@ -176,6 +187,42 @@
     // Quiet unless there is genuinely something on disk to reclaim.
     setTimeout(() => BN.views.achievements.offerRecovery(), 4000);
     BN.api.app.onAchievement?.((earned) => BN.views.achievements.celebrate(earned));
+  }
+
+  /**
+   * A link that wants to install or launch something.
+   *
+   * Always confirmed. The link could have come from anywhere - a chat window,
+   * a web page, an email - and "clicking a link started a 90 GB download" is
+   * not a thing this launcher is going to do to anybody. The dialog names the
+   * title so the answer is to something specific rather than to a verb.
+   */
+  async function openIntent({ intent, gameId }) {
+    const game = BN.state.game(gameId);
+    if (!game) {
+      BN.ui.toast('Unknown title', 'That link points at something not in the catalogue.', { kind: 'error' });
+      return;
+    }
+
+    const wantsPlay = intent === 'play';
+    if (wantsPlay && !game.installed) {
+      BN.ui.toast('Not installed', `${game.title} is not installed on this machine.`, { kind: 'info' });
+      go('store');
+      setTimeout(() => BN.components.openDetail(gameId), 160);
+      return;
+    }
+
+    const ok = await BN.ui.confirm({
+      title: wantsPlay ? `Launch ${game.title}?` : `Install ${game.title}?`,
+      message: wantsPlay
+        ? 'A link asked to start this title.'
+        : `A link asked to install this title. That will download ${BN.util.bytes(game.sizeBytes || 0)}.`,
+      confirmLabel: wantsPlay ? 'Launch' : 'Install'
+    });
+    if (!ok) return;
+
+    if (wantsPlay) await BN.state.launch(gameId);
+    else await BN.state.install(gameId);
   }
 
   function buildNav() {

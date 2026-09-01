@@ -173,6 +173,10 @@ contextBridge.exposeInMainWorld('blacknight', {
     setTrayIcon: (dataUrl) => call('app:set-tray-icon', dataUrl),
     savePoster: (dataUrl, name) => call('app:save-poster', dataUrl, name),
     saveText: (text, name) => call('app:save-text', text, name),
+    saveJson: (text, name) => call('app:save-json', text, name),
+    openJson: () => call('app:open-json'),
+    changelog: () => call('app:changelog'),
+    smokeReport: (line) => call('app:smoke-report', line),
     saveVideo: (dataUrl, name) => call('app:save-video', dataUrl, name),
     setProgress: (value) => call('app:set-progress', value),
     relaunch: () => call('app:relaunch'),
@@ -180,6 +184,7 @@ contextBridge.exposeInMainWorld('blacknight', {
     onNavigate: (handler) => on('nav:go', handler),
     onDeepLink: (handler) => on('deeplink', handler),
     onAchievement: (handler) => on('achievement', handler),
-    onQuickLaunch: (handler) => on('quick-launch', handler)
+    onQuickLaunch: (handler) => on('quick-launch', handler),
+    onSmoke: (handler) => on('smoke:run', handler)
   }
 });

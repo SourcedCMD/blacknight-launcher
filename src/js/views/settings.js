@@ -28,6 +28,7 @@
   ];
 
   let section = 'general';
+  let query = '';
   let appInfo = null;
 
   /* --- Row builders ----------------------------------------------------- */
@@ -277,6 +278,9 @@
         toggle('detectOtherLaunchers', 'Show games from other launchers',
           'Finds what Steam, Epic, GOG and Xbox have installed so your library is the whole machine. Read only, and nothing leaves this PC.',
           () => BN.util.bus.emit('foreign-changed')),
+
+        transferRow(),
+        whatsNewRow(),
 
         toggle('sessionGhost', 'Show how long this run is going',
           'A quiet bar comparing the session you are in with your own usual one for that title.'),
@@ -809,6 +813,30 @@
     ];
   }
 
+  /** Moving settings between machines. */
+  function transferRow() {
+    const out = el('button', { class: 'btn btn-ghost btn-sm' }, 'Export');
+    out.addEventListener('click', () => BN.views.transfer.exportSettings());
+
+    const inn = el('button', { class: 'btn btn-ghost btn-sm' }, 'Import');
+    inn.addEventListener('click', () => BN.views.transfer.importSettings());
+
+    const pair = el('div', { class: 'row', style: { gap: '8px' } });
+    pair.append(out, inn);
+
+    return row(
+      'Settings file',
+      'Move these settings to another machine. Machine-specific paths, ids and anything secret are left out.',
+      pair
+    );
+  }
+
+  function whatsNewRow() {
+    const button = el('button', { class: 'btn btn-ghost btn-sm' }, 'Read');
+    button.addEventListener('click', () => BN.views.transfer.whatsNew());
+    return row("What's new", 'The release notes that shipped with this build.', button);
+  }
+
   /**
    * Passkeys, and an honest account of what they currently do.
    *
@@ -1202,6 +1230,8 @@
       <div class="view-pad">
         <div class="section-head" style="margin-bottom:24px">
           <div><h2>Settings</h2><div class="sub">Changes apply immediately</div></div>
+          <input class="input settings-search" id="settings-search" type="search"
+                 placeholder="Search settings…" aria-label="Search settings" spellcheck="false">
         </div>
         <div class="settings-layout">
           <nav class="settings-nav">
@@ -1216,17 +1246,94 @@
     view.querySelectorAll('[data-section]').forEach((btn) =>
       btn.addEventListener('click', () => {
         section = btn.dataset.section;
+        query = '';
+        const box = view.querySelector('#settings-search');
+        if (box) box.value = '';
         view.querySelectorAll('[data-section]').forEach((b) => b.setAttribute('aria-current', String(b === btn)));
         paintPanel();
       })
     );
 
+    const search = view.querySelector('#settings-search');
+    search.addEventListener('input', () => {
+      query = search.value.trim().toLowerCase();
+      paintPanel();
+    });
+    // Escape clears rather than closing anything, which is what a search box
+    // in a page is expected to do.
+    search.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !search.value) return;
+      e.stopPropagation();
+      search.value = '';
+      query = '';
+      paintPanel();
+    });
+
     paintPanel();
+  }
+
+  /**
+   * Searching across every section at once.
+   *
+   * Seventy-odd rows spread over seven tabs, and the honest answer to "where
+   * is the setting for X" was previously to click through all seven. The rows
+   * are already built as DOM, so the filter reads their text rather than
+   * needing a parallel index that would drift the first time somebody edited a
+   * label.
+   */
+  function matchingRows() {
+    const builders = [
+      ['General', generalSection], ['Appearance', appearanceSection], ['Downloads', downloadsSection],
+      ['Account', accountSection], ['Privacy', privacySection], ['Shortcuts', shortcutsSection], ['About', aboutSection]
+    ];
+
+    const found = [];
+    for (const [label, build] of builders) {
+      let nodes;
+      try {
+        nodes = build();
+      } catch {
+        continue; // a section that needs state it has not got yet
+      }
+
+      for (const node of nodes) {
+        // Groups hold rows; search inside them so a match shows its own row
+        // rather than the whole group it happened to sit in.
+        const rows = node.querySelectorAll?.('.set-row');
+        for (const row of rows?.length ? rows : []) {
+          if (row.textContent.toLowerCase().includes(query)) found.push({ label, row });
+        }
+      }
+    }
+    return found;
   }
 
   function paintPanel() {
     const panel = document.getElementById('settings-panel');
     if (!panel) return;
+
+    if (query) {
+      panel.innerHTML = '';
+      const hits = matchingRows();
+
+      if (!hits.length) {
+        panel.append(el('p', { class: 'dim', style: { padding: '24px 4px' } }, `Nothing matches “${query}”.`));
+        return;
+      }
+
+      // Grouped by the section each row came from, so a result still tells you
+      // where the setting lives.
+      let last = null;
+      for (const hit of hits) {
+        if (hit.label !== last) {
+          panel.append(el('h3', { class: 'set-group-title' }, hit.label));
+          last = hit.label;
+        }
+        panel.append(hit.row);
+      }
+      return;
+    }
+
     const builders = {
       general: generalSection,
       appearance: appearanceSection,

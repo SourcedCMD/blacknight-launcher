@@ -52,6 +52,12 @@ const DEFAULTS = {
   // Empty until somebody deploys `server/`. While empty, passkey enrolment
   // reports that there is nowhere to keep a credential rather than failing.
   accountsUrl: '',
+  // Where to send "somebody is playing this" beats. Empty means the store
+  // shows no player counts, which is what it has always done.
+  presenceUrl: '',
+  // Generated on first use, stored here, and meaningless outside this install.
+  presenceClientId: '',
+
   // Off by default. Reads the install manifests Steam, Epic, GOG and Xbox
   // already wrote, so the library can show what is on the machine rather than
   // only what this launcher put there. Never leaves the machine.

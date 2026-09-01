@@ -43,7 +43,7 @@ test.before(async () => {
   // Port 0 lets the OS choose, and the server prints where it landed.
   child = spawn(process.execPath, [path.join(ROOT, 'index.js')], {
     cwd: ROOT,
-    env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ADMIN_TOKEN: ADMIN, RESET_ECHO: '1' },
+    env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ADMIN_TOKEN: ADMIN, RESET_ECHO: '1', RATE_LIMITS: 'off' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -363,4 +363,68 @@ test('signalling to a peer that is not there is ignored', async () => {
   await settle();
   assert.equal(a.readyState, 1, 'the socket survives');
   a.close();
+});
+
+/* --- Presence -------------------------------------------------------------- */
+
+test('a title below the reporting floor gains no player count', async () => {
+  for (let i = 0; i < 3; i++) await call('POST', '/presence', { gameId: 'ashfall', clientId: `few-${i}` });
+  const { data } = await call('GET', '/presence');
+  assert.equal(data.players.ashfall, undefined, 'three people is not a crowd, and saying so is worse than silence');
+});
+
+test('enough players are reported, rounded', async () => {
+  for (let i = 0; i < 7; i++) await call('POST', '/presence', { gameId: 'tidebreaker', clientId: `many-${i}` });
+  const { data } = await call('GET', '/presence');
+  assert.equal(data.players.tidebreaker, 5, 'rounded to five, so it does not tick with individuals');
+});
+
+test('the same client beating twice is still one player', async () => {
+  for (let i = 0; i < 3; i++) await call('POST', '/presence', { gameId: 'repeat', clientId: 'same-one' });
+  const { data } = await call('GET', '/presence');
+  assert.equal(data.players.repeat, undefined);
+});
+
+test('counts reach the catalog the launcher already fetches', async () => {
+  for (let i = 0; i < 7; i++) await call('POST', '/presence', { gameId: 'blacknight-demo', clientId: `cat-${i}` });
+  const { data } = await call('GET', '/catalog');
+  const game = data.games.find((g) => g.id === 'blacknight-demo');
+  assert.equal(game.playersOnline, 5);
+
+  const quiet = data.games.find((g) => g.id !== 'blacknight-demo' && !g.playersOnline);
+  assert.ok(quiet, 'and a title nobody is playing simply lacks the field');
+});
+
+test('a heartbeat with nothing in it is ignored rather than counted', async () => {
+  assert.equal((await call('POST', '/presence', {})).status, 200);
+  const { data } = await call('GET', '/presence');
+  assert.equal(data.players[''], undefined);
+});
+
+/* --- The crash dashboard --------------------------------------------------- */
+
+test('the dashboard is not public', async () => {
+  const res = await fetch(`${base}/crash/dashboard`);
+  assert.equal(res.status, 403);
+});
+
+test('the dashboard renders with the token', async () => {
+  await call('POST', '/crash', { version: '1.0.1', platform: 'win32', message: 'Dashboard test failure' });
+
+  const res = await fetch(`${base}/crash/dashboard?token=${ADMIN}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  assert.equal(res.headers.get('cache-control'), 'no-store', 'a token in a URL must not be cached');
+
+  const html = await res.text();
+  assert.match(html, /Dashboard test failure/);
+  assert.match(html, /<!doctype html>/i);
+});
+
+test('a crash message cannot inject markup into the dashboard', async () => {
+  await call('POST', '/crash', { version: '1.0.1', message: '<script>alert(1)</script>' });
+
+  const html = await (await fetch(`${base}/crash/dashboard?token=${ADMIN}`)).text();
+  assert.ok(!html.includes('<script>alert(1)</script>'), 'the raw tag must not survive');
+  assert.match(html, /&lt;script&gt;/, 'it is shown escaped instead');
 });

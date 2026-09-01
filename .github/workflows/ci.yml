@@ -63,6 +63,14 @@ jobs:
         shell: bash
         run: node scripts/ci-annotate.js server-output.txt
 
+      # Boots the real app and drives it through every view. Windows only:
+      # that is the platform this ships on, and a headless Linux runner needs a
+      # virtual display for a check that would be testing the display server as
+      # much as the app.
+      - name: Smoke test the app
+        if: runner.os == 'Windows'
+        run: npm run smoke
+
       # A launcher that takes two seconds to paint is a launcher people stop
       # opening. This fails the build rather than letting the number drift.
       - name: Check the performance budget
