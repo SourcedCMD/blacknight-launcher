@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, Tray, Menu, screen, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, Tray, Menu, screen, Notification, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -15,6 +15,8 @@ const { Logger } = require('./services/logger');
 const { Catalog } = require('./services/catalog');
 const { Peers } = require('./services/peers');
 const { Achievements } = require('./services/achievements');
+const { Overlay } = require('./services/overlay');
+const { Handoff } = require('./services/handoff');
 
 const PROTOCOL = 'blacknight';
 
@@ -26,7 +28,8 @@ if (isDev) app.setPath('userData', `${app.getPath('userData')} (dev)`);
 
 let win = null;
 let tray = null;
-let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, peers, achievements, log;
+let settings, auth, downloader, library, catalog, catalogStore, updates, hardware, presence, peers, achievements, overlay, handoff, log;
+let appIconImage = null;
 let quitting = false;
 let dataDir;
 
@@ -235,6 +238,8 @@ function bootServices() {
   presence = new Presence({ enabled: settings.get('richPresence') !== false });
 
   achievements = new Achievements(dataDir, library);
+  overlay = new Overlay(settings, log);
+  handoff = new Handoff(dataDir, settings, library, log);
   peers = new Peers(settings, log, { library });
   // The library asks before every install whether a machine on this network
   // already has the build.
@@ -245,6 +250,8 @@ function bootServices() {
   // than what the game is actually about.
   library.onSessionChange = (gameId, running) => {
     const game = catalog.games.find((g) => g.id === gameId);
+    overlay.setPlaying(running ? game : null, Date.now());
+
     if (!running) {
       presence.clear();
       // A finished session is exactly when a new achievement becomes true.
@@ -254,11 +261,17 @@ function bootServices() {
     presence.setActivity({
       title: game?.title || 'a BlackNight title',
       details: game?.tagline || undefined,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      // Only multiplayer titles advertise a joinable party.
+      party: game?.tags?.some((t) => /multiplayer|co-op|pvp/i.test(t))
+        ? { id: `bn-${gameId}-${Date.now().toString(36)}`, size: 1, max: 4, joinable: false }
+        : null,
+      link: `https://github.com/SourcedCMD/blacknight-launcher`
     });
   };
   presence.connect();
   if (settings.get('lanSharing')) peers.start();
+  if (settings.get('overlayEnabled')) overlay.start();
 
   const forward = (channel) => (payload) => {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -269,6 +282,7 @@ function bootServices() {
   downloader.on('reused', ({ bytes }) => library.recordTransfer(bytes, { source: 'reused' }));
 
   downloader.on('progress', forward('downloads:progress'));
+  downloader.on('changed', () => refreshThumbar());
   downloader.on('changed', forward('downloads:changed'));
   downloader.on('completed', (item) => {
     forward('downloads:completed')(item);
@@ -282,6 +296,113 @@ function bootServices() {
       { route: 'downloads' }
     );
   });
+}
+
+
+/* -------------------------------------------------------------------- */
+/* Windows shell integration                                             */
+
+/**
+ * Recent games on the taskbar icon's right-click menu.
+ *
+ * The library already keeps a recent list; this is the same information where
+ * Windows users expect to find it, so a game can be started without the
+ * launcher window ever being opened.
+ */
+function refreshJumpList() {
+  if (process.platform !== 'win32') return;
+  try {
+    const recent = (library.store.get('recent') || [])
+      .map((id) => library.list().find((g) => g.id === id))
+      .filter((game) => game && game.installed)
+      .slice(0, 6);
+
+    if (!recent.length) {
+      app.setJumpList(null);
+      return;
+    }
+
+    app.setJumpList([
+      {
+        type: 'custom',
+        name: 'Recently played',
+        items: recent.map((game) => ({
+          type: 'task',
+          title: game.title,
+          description: `Play ${game.title}`,
+          program: process.execPath,
+          args: `--launch ${game.id}`,
+          iconPath: process.execPath,
+          iconIndex: 0
+        }))
+      }
+    ]);
+  } catch (err) {
+    log?.debug('shell', 'Could not set the jump list', err);
+  }
+}
+
+/**
+ * Pause and resume on the taskbar thumbnail preview.
+ *
+ * Hovering the taskbar icon during a download should let you deal with it
+ * there, rather than restoring a window to press one button.
+ */
+function refreshThumbar() {
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+  try {
+    const active = downloader.list().filter((d) => ['downloading', 'queued', 'paused'].includes(d.status));
+    if (!active.length) {
+      win.setThumbarButtons([]);
+      return;
+    }
+
+    if (!appIconImage) return;
+
+    const paused = active.every((d) => d.status === 'paused');
+    win.setThumbarButtons([
+      {
+        tooltip: paused ? 'Resume downloads' : 'Pause downloads',
+        icon: appIconImage,
+        click: () => {
+          for (const item of active) {
+            if (paused) downloader.resume(item.id);
+            else downloader.pause(item.id);
+          }
+        }
+      }
+    ]);
+  } catch (err) {
+    log?.debug('shell', 'Could not set thumbnail buttons', err);
+  }
+}
+
+/**
+ * A hotkey that reaches the launcher from inside a game or any other window.
+ *
+ * The command palette already is a quick launcher; it just could not be
+ * reached without alt-tabbing first. Registration can fail when another
+ * application owns the combination, which is reported rather than swallowed.
+ */
+function registerGlobalHotkey() {
+  const accelerator = settings.get('globalHotkey') || 'Control+Shift+Space';
+  try {
+    globalShortcut.unregisterAll();
+    if (settings.get('globalHotkeyEnabled') === false) return { ok: true, enabled: false };
+
+    const ok = globalShortcut.register(accelerator, () => {
+      if (!win || win.isDestroyed()) return;
+      if (!win.isVisible()) win.show();
+      win.focus();
+      win.webContents.send('quick-launch');
+    });
+
+    if (!ok) log?.warn('shell', `Another application already owns ${accelerator}`);
+    return { ok, enabled: true, accelerator };
+  } catch (err) {
+    log?.warn('shell', 'Could not register the global hotkey', err);
+    return { ok: false, error: err.message };
+  }
 }
 
 /* -------------------------------------------------------------------- */
@@ -319,6 +440,11 @@ function createWindow() {
     minHeight: 680,
     show: false,
     frame: false,
+    // Mica tints the window with the desktop behind it - the material Explorer
+    // and Settings use. It is what stops a frameless dark window reading as
+    // "an Electron app" rather than a Windows one. Ignored below Windows 11,
+    // where the solid colour below is what shows.
+    backgroundMaterial: settings.get('windowMaterial') || 'mica',
     backgroundColor: '#06060a',
     title: 'BlackNight Launcher',
     autoHideMenuBar: true,
@@ -498,6 +624,32 @@ function registerIpc() {
   handle('library:adopt', (id) => library.adoptInstall(id));
   handle('library:data-usage', () => library.dataUsage());
 
+  /* Handoff -------------------------------------------------------------- */
+  handle('handoff:start', () => handoff.start());
+  handle('handoff:stop', () => {
+    handoff.stop();
+    return { ok: true };
+  });
+  handle('handoff:status', () => handoff.status());
+  handle('handoff:receive', async (details) => {
+    try {
+      return await handoff.receive(details);
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /* Streaming ------------------------------------------------------------ */
+  handle('overlay:status', () => ({ enabled: overlay.enabled, url: overlay.url() }));
+  handle('overlay:set-enabled', (on) => overlay.setEnabled(on));
+
+  /* Windows shell -------------------------------------------------------- */
+  handle('shell:hotkey', () => registerGlobalHotkey());
+  handle('shell:refresh-jumplist', () => {
+    refreshJumpList();
+    return true;
+  });
+
   /* Achievements --------------------------------------------------------- */
   handle('achievements:list', () => achievements.list());
   handle('achievements:progress', () => achievements.progress());
@@ -650,7 +802,11 @@ function registerIpc() {
     try {
       const image = nativeImage.createFromDataURL(dataUrl);
       if (image.isEmpty()) return false;
+      // Kept so the thumbnail toolbar has something to draw; Windows refuses
+      // an empty image and silently drops the whole button set.
+      appIconImage = image;
       win?.setIcon(image);
+      refreshThumbar();
       if (settings.get('minimizeToTray')) buildTray(image);
       return true;
     } catch {
@@ -756,6 +912,14 @@ function parseDeepLink(url) {
     const rest = decodeURIComponent(parsed.pathname || '').replace(/^\/+/, '');
 
     if (action === 'game' && rest) return { type: 'game', gameId: rest };
+    if (action === 'handoff') {
+      return {
+        type: 'handoff',
+        host: parsed.searchParams.get('host'),
+        port: Number(parsed.searchParams.get('port')),
+        code: parsed.searchParams.get('code')
+      };
+    }
     if (['games', 'store', 'plus', 'downloads', 'settings', 'profile'].includes(action)) {
       return { type: 'route', route: action };
     }
@@ -827,6 +991,9 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     scheduleBackgroundVerify();
+    refreshJumpList();
+    refreshThumbar();
+    registerGlobalHotkey();
     // Achievements are re-checked once the library has settled.
     setTimeout(() => announceAchievements(), 8000);
 
@@ -855,8 +1022,11 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     quitting = true;
+    globalShortcut.unregisterAll();
     downloader?.shutdown();
     presence?.disconnect();
     peers?.stop();
+    overlay?.stop();
+    handoff?.stop();
   });
 }

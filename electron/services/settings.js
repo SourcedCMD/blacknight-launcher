@@ -32,6 +32,15 @@ const DEFAULTS = {
   // Launcher behaviour
   autoCheckUpdates: true,
   betaChannel: false,
+
+  // Windows shell and streaming
+  windowMaterial: 'mica',
+  globalHotkeyEnabled: true,
+  globalHotkey: 'Control+Shift+Space',
+  streamerMode: false,
+  overlayEnabled: false,
+  handheldMode: 'auto', // auto | on | off
+  viewTransitions: true,
   windowBounds: null,
   windowMaximized: false,
   launchOnStartup: false,

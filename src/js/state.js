@@ -30,6 +30,8 @@
     root.dataset.accent = state.settings.accent || 'moonlight';
     root.dataset.motion = state.settings.reduceMotion ? 'reduced' : 'full';
     root.style.setProperty('--ui-scale', (state.settings.uiScale || 100) / 100);
+    // Lets the stylesheet thin the background so the Mica tint reads through.
+    root.setAttribute('data-material', state.settings.windowMaterial || 'none');
 
     BN.sound?.configure({ enabled: !!state.settings.uiSounds, volume: state.settings.soundVolume ?? 45 });
 

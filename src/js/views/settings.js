@@ -121,18 +121,6 @@
         slider('saveBackupsKept', 'Snapshots kept per title', null, { min: 1, max: 20, step: 1, format: (v) => `${v}` })
       ),
       group(
-        'Atmosphere',
-        'The launcher draws itself from your library and the clock.',
-        toggle('libraryConstellation', 'Show my library as a constellation', 'Each title becomes a star: brighter the more recently you played it.', () =>
-          BN.fx.setLibrary(BN.state.data.library)
-        ),
-        toggle('timeOfDayTint', 'Follow the time of day', 'Shifts the background from dusk through to deep night.', () =>
-          BN.app.paintTimeOfDay()
-        ),
-        toggle('launchRitual', 'Play the launch sequence', 'A short title card when a game starts.'),
-        toggle('titleSignatures', 'Give each title its own sound', 'Derives a launch sting from the game, not a single shared cue.')
-      ),
-      group(
         'History',
         'Recorded on this machine, never uploaded.',
         toggle('playJournal', 'Keep a play journal', 'One line per session, with room for a note.'),
@@ -177,6 +165,30 @@
           'Prerelease versions arrive first, so problems are found before everyone sees them. Restart to apply.'
         )
       ),
+      group(
+        'Move to another machine',
+        'Over your local network. Accounts and passwords never travel.',
+        row(
+          'Send my setup',
+          'Shows a code and a QR for the machine you are moving to.',
+          (() => {
+            const b = el('button', { class: 'btn btn-sm btn-ghost' });
+            b.innerHTML = `${icon('external')} Send`;
+            b.addEventListener('click', () => BN.views.handoff.send());
+            return b;
+          })()
+        ),
+        row(
+          'Bring my setup across',
+          'Enter the code shown on the other machine.',
+          (() => {
+            const b = el('button', { class: 'btn btn-sm btn-ghost' });
+            b.innerHTML = `${icon('download')} Receive`;
+            b.addEventListener('click', () => BN.views.handoff.receive());
+            return b;
+          })()
+        )
+      ),
       group('Setup', null, replayOnboardingRow())
     ];
   }
@@ -202,6 +214,33 @@
 
     return [
       group('Theme', 'BlackNight is built for the dark. Pick the accent that carries it.', row('Accent colour', 'Used across highlights, progress and focus states.', swatches)),
+      group(
+        'Atmosphere',
+        'The launcher draws itself from your library and the clock.',
+        toggle('libraryConstellation', 'Show my library as a constellation', 'Each title becomes a star: brighter the more recently you played it.', () =>
+          BN.fx.setLibrary(BN.state.data.library)
+        ),
+        toggle('timeOfDayTint', 'Follow the time of day', 'Shifts the background from dusk through to deep night.', () =>
+          BN.app.paintTimeOfDay()
+        ),
+        toggle('launchRitual', 'Play the launch sequence', 'A short title card when a game starts.'),
+        toggle('titleSignatures', 'Give each title its own sound', 'Derives a launch sting from the game, not a single shared cue.')
+      ),
+      group(
+        'Window',
+        'Windows 11 draws its own material behind the launcher.',
+        select('windowMaterial', 'Background material', 'Takes effect when the launcher restarts.', [
+          ['mica', 'Mica (follows your wallpaper)'],
+          ['acrylic', 'Acrylic (blurred)'],
+          ['none', 'Solid']
+        ]),
+        toggle('viewTransitions', 'Animate between pages', 'Cross-fades when moving between Games, Store and the rest.'),
+        select('handheldMode', 'Handheld layout', 'Larger controls and fewer columns, for a Deck or a small screen.', [
+          ['auto', 'Automatic'],
+          ['on', 'Always on'],
+          ['off', 'Off']
+        ], () => BN.app.applyHandheldMode())
+      ),
       group(
         'Motion and effects',
         'Turn the ambience down on lower-powered machines.',
@@ -573,6 +612,58 @@
     return row('First-run setup', 'Walk through install folder, accent and sound again.', b);
   }
 
+  /**
+   * The OBS browser source, with the URL to paste once it is running.
+   */
+  function overlayRow() {
+    const node = el('div', { class: 'set-row stack' });
+
+    const paint = (status) => {
+      node.innerHTML = `
+        <div class="between" style="margin-bottom:10px;width:100%">
+          <div class="grow">
+            <div class="label">Now-playing source for OBS</div>
+            <div class="desc">A transparent page showing what you are playing, for a browser source.</div>
+          </div>
+        </div>`;
+
+      const row = el('div', { class: 'row', style: { gap: '8px', width: '100%' } });
+      const box = el('button', {
+        class: 'switch',
+        role: 'switch',
+        'aria-checked': String(!!status.enabled),
+        'aria-label': 'Now-playing source for OBS'
+      });
+      box.addEventListener('click', async () => {
+        const next = await BN.api.overlay.setEnabled(!status.enabled);
+        paint({ enabled: next.enabled, url: next.url });
+      });
+      row.append(box);
+
+      if (status.enabled && status.url) {
+        const field = el('div', { class: 'path-box', style: { flex: '1' } });
+        field.innerHTML = `${icon('external')}<span class="mono">${esc(status.url)}</span>`;
+        const copy = el('button', { class: 'btn btn-sm btn-ghost' });
+        copy.innerHTML = `${icon('copy')} Copy`;
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(status.url);
+            BN.ui.toast('Copied', 'Paste it into an OBS browser source.', { kind: 'ok', ms: 2600 });
+          } catch {
+            BN.ui.toast('Could not copy', status.url, { kind: 'warn' });
+          }
+        });
+        row.append(field, copy);
+      }
+
+      node.append(row);
+    };
+
+    paint({ enabled: false });
+    BN.api.overlay.status().then(paint);
+    return node;
+  }
+
   function accountSection() {
     const user = BN.state.data.user;
 
@@ -732,6 +823,10 @@
           'Include machine details in logs',
           'Adds your hardware and OS to the local log file so a support report is useful. Nothing is uploaded anywhere.'
         ),
+        toggle('streamerMode', 'Streamer mode', 'Blurs your handle, email and library so they do not end up in a recording.', () =>
+          BN.app.applyStreamerMode()
+        ),
+        overlayRow(),
         crashReportRow(),
         row(
           'Launcher logs',

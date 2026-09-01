@@ -714,3 +714,106 @@ body.pointer-active #cursor-glow { opacity: 1; }
   .sidebar .side-title { opacity: 0; }
   .view-pad { padding: 24px 22px 50px; }
 }
+
+/* --- Mica ---------------------------------------------------------------- */
+/* Windows 11 paints its material behind the window, so the page has to let it
+   through. Below Windows 11 the window's own background colour shows instead
+   and this changes nothing. */
+
+html[data-material='mica'] body {
+  background: transparent;
+}
+html[data-material='mica'] #ambient {
+  /* Thinned so the desktop tint reads through, rather than being buried. */
+  opacity: 0.72;
+}
+
+/* --- View transitions ---------------------------------------------------- */
+
+::view-transition-old(root) {
+  animation: vt-out 180ms var(--ease-out) both;
+}
+::view-transition-new(root) {
+  animation: vt-in 260ms var(--ease-out) both;
+}
+@keyframes vt-out { to { opacity: 0; transform: translateY(-6px) scale(0.995); } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(8px) scale(0.995); } }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-duration: 1ms; }
+}
+
+/* --- Scroll-driven reveal ------------------------------------------------ */
+/* Replaces the JavaScript IntersectionObserver reveal where supported: this
+   runs on the compositor and scrubs properly when scrolling back up. */
+
+@supports (animation-timeline: view()) {
+  .view.current [data-reveal] {
+    animation: reveal-in linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 55%;
+  }
+  @keyframes reveal-in {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .view.current [data-reveal] { animation: none; opacity: 1; transform: none; }
+  }
+}
+
+/* --- Streamer mode ------------------------------------------------------- */
+/* Everything that identifies the person at the keyboard, blurred until
+   hovered. Hover still works, so the launcher stays usable on stream. */
+
+.streamer .account-name,
+.streamer .menu-head .handle,
+.streamer .menu-head .email,
+.streamer .profile-head .mute,
+.streamer [data-private] {
+  filter: blur(7px);
+  transition: filter 140ms ease;
+  user-select: none;
+}
+.streamer .account-name:hover,
+.streamer .menu-head .handle:hover,
+.streamer .menu-head .email:hover,
+.streamer .profile-head .mute:hover,
+.streamer [data-private]:hover {
+  filter: none;
+}
+.streamer::after {
+  content: 'Streamer mode';
+  position: fixed;
+  bottom: 10px;
+  left: 12px;
+  z-index: 999;
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+/* --- Handheld ------------------------------------------------------------ */
+/* A Deck-sized screen or a connected pad: larger targets, fewer columns, and
+   the controller hints that are normally hidden. */
+
+.handheld {
+  --ui-scale: 1.15;
+}
+.handheld .game-grid,
+.handheld .store-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.handheld .btn {
+  min-height: 42px;
+  padding-inline: 18px;
+}
+.handheld .nav-search kbd,
+.handheld .cheat kbd {
+  display: none;
+}
+.handheld .pad-hint { display: inline-flex; }
+.pad-hint { display: none; }

@@ -1046,3 +1046,70 @@ kbd {
 .usage-key { display: flex; gap: 14px; font-size: 0.72rem; color: var(--text-faint); margin-top: 10px; }
 .usage-key span { display: flex; align-items: center; gap: 5px; }
 .usage-key i { width: 8px; height: 8px; border-radius: 2px; display: block; }
+
+/* --- Anchored menus ------------------------------------------------------ */
+/* A popover lives in the top layer, so it needs its own positioning; anchor
+   positioning ties it to the button without measuring anything in script. */
+
+.menu[popover] {
+  margin: 0;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  padding: 6px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg, 0 18px 50px -12px rgba(0, 0, 0, 0.7));
+  animation: menu-in 150ms var(--ease-out);
+}
+.menu[popover]::backdrop { background: transparent; }
+
+@supports (anchor-name: --a) {
+  .menu-anchored[popover] {
+    position: fixed;
+    top: anchor(bottom);
+    right: anchor(right);
+    /* The UA stylesheet gives an open popover inset:0, and a box with both
+       left and right set resolves to left - which pins the menu to the far
+       side of the screen. These have to be cleared explicitly. */
+    left: auto;
+    bottom: auto;
+    margin: 8px 0 0;
+    /* Flip above the button when there is no room below. */
+    position-try-fallbacks: flip-block;
+  }
+}
+
+/* --- Handoff -------------------------------------------------------------- */
+
+.handoff { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.handoff > p { align-self: stretch; text-align: left; }
+.handoff-code {
+  display: flex;
+  gap: 8px;
+  margin: 22px 0 18px;
+}
+.handoff-code span {
+  width: 42px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  color: var(--text);
+  background: var(--surface-sunk);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+}
+.handoff-qr {
+  padding: 10px;
+  background: #fff;
+  border-radius: var(--r-md);
+  line-height: 0;
+}
+.handoff-qr svg { display: block; }
+.handoff-meta {
+  display: flex;
+  gap: 14px;
+  margin-top: 14px;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}

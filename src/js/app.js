@@ -148,6 +148,8 @@
       else if (target.type === 'game') {
         go('store');
         setTimeout(() => BN.components.openDetail(target.gameId), 160);
+      } else if (target.type === 'handoff') {
+        BN.views.handoff.receive(target);
       }
     });
 
@@ -155,6 +157,12 @@
     BN.fx.setLibrary(BN.state.data.library);
     BN.i18n?.setLocale(BN.state.data.settings.locale);
     paintTimeOfDay();
+    applyStreamerMode();
+    applyHandheldMode();
+    BN.api.app.onQuickLaunch?.(() => quickLaunch());
+    // A pad connecting is exactly when handheld mode should switch on.
+    window.addEventListener('gamepadconnected', applyHandheldMode);
+    window.addEventListener('resize', applyHandheldMode);
     // Re-checked every ten minutes so the shift across dusk is not abrupt.
     setInterval(paintTimeOfDay, 600000);
     checkGameUpdates();
@@ -502,6 +510,29 @@
 
   /* --- Routing ---------------------------------------------------------- */
 
+  /**
+   * Swaps views through the View Transitions API when it is available.
+   *
+   * The browser captures both states and cross-fades between them on the
+   * compositor, which is both smoother and less code than the manual
+   * class-toggle-and-reflow dance this used to do. Falls back to a plain
+   * swap where the API is missing or the user asked for less motion.
+   */
+  function withTransition(swap) {
+    const wanted =
+      document.startViewTransition &&
+      BN.state.data.settings.viewTransitions !== false &&
+      !BN.state.data.settings.reduceMotion &&
+      !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (!wanted) return swap();
+    try {
+      return document.startViewTransition(swap);
+    } catch {
+      return swap();
+    }
+  }
+
   function go(next, arg) {
     if (!ROUTES.includes(next)) next = 'games';
     const previous = route;
@@ -512,16 +543,13 @@
       link.setAttribute('aria-current', link.dataset.route === next ? 'page' : 'false')
     );
 
-    $$('.view').forEach((view) => {
-      const active = view.id === `view-${next}`;
-      view.classList.toggle('hidden', !active);
-      view.classList.toggle('current', active);
-      if (active) {
-        view.classList.remove('enter');
-        void view.offsetWidth;
-        view.classList.add('enter');
-        view.scrollTop = 0;
-      }
+    withTransition(() => {
+      $$('.view').forEach((view) => {
+        const active = view.id === `view-${next}`;
+        view.classList.toggle('hidden', !active);
+        view.classList.toggle('current', active);
+        if (active) view.scrollTop = 0;
+      });
     });
 
     if (next === 'settings' && arg) BN.views.settings.go(arg);
@@ -695,6 +723,49 @@
     } catch { /* the tray is cosmetic */ }
   }
 
+  /* --- Streaming and presentation modes --------------------------------- */
+
+  /**
+   * Streamer mode hides anything personal from a capture.
+   *
+   * Anyone who streams has been burned by an email or a handle sitting in the
+   * corner of a recording. It is a class and a stylesheet rule, and almost
+   * nobody ships it.
+   */
+  function applyStreamerMode() {
+    const on = BN.state.data.settings.streamerMode === true;
+    document.documentElement.classList.toggle('streamer', on);
+    return on;
+  }
+
+  /**
+   * Handheld mode: bigger type, fewer columns, controller hints visible.
+   *
+   * "auto" turns it on for a small screen or a connected pad, which is what a
+   * Steam Deck looks like from in here.
+   */
+  function applyHandheldMode() {
+    const setting = BN.state.data.settings.handheldMode || 'auto';
+    const pads = navigator.getGamepads ? [...navigator.getGamepads()].some(Boolean) : false;
+    const small = Math.min(screen.width, screen.height) <= 800 || innerWidth <= 1100;
+    const on = setting === 'on' || (setting === 'auto' && (pads || small));
+    document.documentElement.classList.toggle('handheld', on);
+    return on;
+  }
+
+  /**
+   * The palette, summoned by the global hotkey from outside the launcher.
+   *
+   * It is the same command palette; the hotkey simply makes it reachable
+   * without alt-tabbing first, which is the whole point of a quick launcher.
+   */
+  function quickLaunch() {
+    BN.ui.closeModal(true);
+    BN.ui.closePalette();
+    openPalette();
+    BN.ui.announce('Quick launch open');
+  }
+
   /* --- Shortcut cheatsheet ---------------------------------------------- */
 
   const SHORTCUTS = [
@@ -817,7 +888,10 @@
 
   /* --------------------------------------------------------------------- */
 
-  BN.app = { boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts, checkGameUpdates, paintTimeOfDay };
+  BN.app = {
+    boot, start, go, signOut, openPalette, toggleSidebar, showShortcuts,
+    checkGameUpdates, paintTimeOfDay, applyStreamerMode, applyHandheldMode, quickLaunch
+  };
 
   document.addEventListener('DOMContentLoaded', () => {
     boot().catch((err) => {

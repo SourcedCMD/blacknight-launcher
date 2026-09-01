@@ -42,6 +42,11 @@ class Store {
     return this.save();
   }
 
+  /** A copy of everything, safe to hand out or serialise. */
+  all() {
+    return structuredClone(this.data);
+  }
+
   reset() {
     this.data = structuredClone(this.defaults);
     return this.save();

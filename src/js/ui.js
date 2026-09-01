@@ -355,12 +355,50 @@
   /* Lightweight dropdown                                                   */
 
   let openDropdown = null;
+  let anchorSeq = 0;
+
+  // The Popover API puts the menu in the top layer, where nothing can clip it,
+  // and handles light-dismiss and Escape natively. The hand-rolled version
+  // below is kept for anywhere the API is missing.
+  const SUPPORTS_POPOVER = typeof HTMLElement !== 'undefined' && 'popover' in HTMLElement.prototype;
+  const SUPPORTS_ANCHOR = typeof CSS !== 'undefined' && CSS.supports?.('anchor-name: --a');
 
   function dropdown(anchor, node) {
     closeDropdown();
     anchor.setAttribute('aria-expanded', 'true');
+
+    if (SUPPORTS_POPOVER) {
+      node.setAttribute('popover', 'auto');
+
+      // Anchor positioning ties the menu to its button without measuring
+      // anything; without it the menu is positioned the old way.
+      if (SUPPORTS_ANCHOR) {
+        const name = `--bn-anchor-${anchorSeq++}`;
+        anchor.style.anchorName = name;
+        node.style.positionAnchor = name;
+        node.classList.add('menu-anchored');
+        document.body.appendChild(node);
+      } else {
+        anchor.parentElement.appendChild(node);
+      }
+
+      // Light-dismiss closes the popover itself, so the button's state has to
+      // follow rather than be driven by our own close path.
+      node.addEventListener('toggle', (e) => {
+        if (e.newState === 'closed') {
+          anchor.setAttribute('aria-expanded', 'false');
+          if (openDropdown?.node === node) openDropdown = null;
+          setTimeout(() => node.remove(), 0);
+        }
+      });
+
+      openDropdown = { anchor, node, popover: true };
+      node.showPopover();
+      return node;
+    }
+
     anchor.parentElement.appendChild(node);
-    openDropdown = { anchor, node };
+    openDropdown = { anchor, node, popover: false };
 
     const away = (e) => {
       if (!node.contains(e.target) && !anchor.contains(e.target)) closeDropdown();
@@ -372,10 +410,20 @@
 
   function closeDropdown() {
     if (!openDropdown) return;
-    const { anchor, node, away } = openDropdown;
+    const { anchor, node, away, popover } = openDropdown;
     openDropdown = null;
-    document.removeEventListener('pointerdown', away);
     anchor.setAttribute('aria-expanded', 'false');
+
+    if (popover) {
+      try {
+        node.hidePopover();
+      } catch {
+        node.remove();
+      }
+      return;
+    }
+
+    document.removeEventListener('pointerdown', away);
     node.style.animation = 'menu-in 150ms ease reverse forwards';
     setTimeout(() => node.remove(), 155);
   }

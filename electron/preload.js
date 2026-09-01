@@ -104,6 +104,23 @@ contextBridge.exposeInMainWorld('blacknight', {
     setEnabled: (enabled) => call('presence:set-enabled', enabled)
   },
 
+  handoff: {
+    start: () => call('handoff:start'),
+    stop: () => call('handoff:stop'),
+    status: () => call('handoff:status'),
+    receive: (details) => call('handoff:receive', details)
+  },
+
+  overlay: {
+    status: () => call('overlay:status'),
+    setEnabled: (on) => call('overlay:set-enabled', on)
+  },
+
+  shell: {
+    registerHotkey: () => call('shell:hotkey'),
+    refreshJumpList: () => call('shell:refresh-jumplist')
+  },
+
   achievements: {
     list: () => call('achievements:list'),
     progress: () => call('achievements:progress'),
@@ -146,6 +163,7 @@ contextBridge.exposeInMainWorld('blacknight', {
     quit: () => call('app:quit'),
     onNavigate: (handler) => on('nav:go', handler),
     onDeepLink: (handler) => on('deeplink', handler),
-    onAchievement: (handler) => on('achievement', handler)
+    onAchievement: (handler) => on('achievement', handler),
+    onQuickLaunch: (handler) => on('quick-launch', handler)
   }
 });

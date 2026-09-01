@@ -47,7 +47,20 @@
     launchOnStartup: false, startMinimized: false, minimizeToTray: true, closeAction: 'tray',
     exitOnGameLaunch: false, showPlaytime: true,
     rememberMe: true, richPresence: true, diagnosticLogs: true, backupSaves: true, saveBackupsKept: 5,
-    libraryFolders: [], locale: 'auto', onboarded: false
+    libraryFolders: [], locale: 'auto', onboarded: false,
+    // Kept in step with electron/services/settings.js so the preview shows the
+    // same defaults the packaged app does.
+    libraryConstellation: true, timeOfDayTint: true, launchRitual: true, titleSignatures: true,
+    sessionInsights: true, playJournal: true, deltaPatching: true, lanSharing: false,
+    keepPakOnUninstall: false, keepRollback: true, backgroundVerify: true,
+    yieldWhilePlaying: true, playingBandwidthPercent: 20,
+    downloadWindowEnabled: false, downloadWindowStart: 1, downloadWindowEnd: 7,
+    betaChannel: false, sendCrashReports: false, crashReportUrl: '', catalogUrl: '',
+    windowMaterial: 'mica', globalHotkeyEnabled: true, globalHotkey: 'Control+Shift+Space',
+    streamerMode: false, overlayEnabled: false, handheldMode: 'auto', viewTransitions: true,
+    lastRoute: 'games', autoCheckUpdates: true
+    // peerId, windowBounds and windowMaximized are machine state, not
+    // preferences, and mean nothing in a browser tab.
   };
   db.settings = { ...SETTINGS_DEFAULTS, ...db.settings };
 
@@ -427,6 +440,23 @@
     },
 
     // A browser tab has no LAN presence to offer.
+    handoff: {
+      async start() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async stop() { return { ok: true }; },
+      async status() { return { open: false }; },
+      async receive() { return { ok: false, error: 'Not available in the browser preview.' }; }
+    },
+
+    overlay: {
+      async status() { return { enabled: false, url: null }; },
+      async setEnabled() { return { ok: false, reason: 'disabled' }; }
+    },
+
+    shell: {
+      async registerHotkey() { return { ok: false, enabled: false }; },
+      async refreshJumpList() { return false; }
+    },
+
     achievements: {
       async list() { return []; },
       async progress() { return { earned: 0, total: 0 }; },
@@ -486,7 +516,8 @@
       async quit() {},
       onNavigate: (fn) => { listeners.nav.push(fn); return () => {}; },
       onDeepLink: () => () => {},
-      onAchievement: () => () => {}
+      onAchievement: () => () => {},
+      onQuickLaunch: () => () => {}
     }
   };
 

@@ -51,6 +51,8 @@ electron/            Main process
     presence.js      Discord rich presence over the local IPC socket
     logger.js        Rolling diagnostic log in the data directory
     catalog.js       Remote slate and news, with the bundled copy as fallback
+    overlay.js       Now-playing browser source for OBS
+    handoff.js       Moves a setup to another machine over the LAN
     chunks.js        Block-level delta patching: manifests, diffs, plans
     peers.js         LAN peer install over multicast discovery
     achievements.js  Local achievements, earned from play history
@@ -70,6 +72,7 @@ src/                 Renderer (classic scripts, dependency-ordered in index.html
     onboarding.js    First-run setup: install folder, accent, sound
     diagnostics.js   Catches renderer errors and reports them to the log
     i18n.js          Translation layer; English bundled
+    qr.js            QR encoding, for the handoff link
     views/journal.js Play journal, session insights, year in review
     views/achievements.js  Achievements, channels, rollback, recovery
     views/           games, store, plus, downloads, settings, profile
@@ -91,6 +94,7 @@ test/
   diagnostics.test.js    Logging, catalog fallback, checksums, saves, updates
   chunks.test.js         Delta patching, peer tokens, journal, year in review
   channels.test.js       Channels, rollback, recovery, usage, achievements
+  qr.test.js             Reed-Solomon and QR layout invariants
 
 build/
   icons/             PNG masters, 16–256px

@@ -33,6 +33,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Release notes taken from this file and put on the GitHub release.
 - Code signing wired into the release workflow, active once the certificate
   secrets are set.
+- Mica backdrop, View Transitions between pages, scroll-driven reveals, and
+  native Popover menus with anchor positioning.
+- Windows integration: a jump list of recent games, pause and resume on the
+  taskbar thumbnail, and a global hotkey that reaches the launcher from inside
+  a game.
+- Streamer mode, and a now-playing browser source for OBS.
+- Discord party fields, so a multiplayer session is joinable from chat.
+- Share pages per title, so an https link unfurls and then opens the launcher.
+- Handheld layout for a Deck or a small screen.
+- Handoff: move settings, library records and history to another machine over
+  the local network, with a pairing code and a QR of the same link.
 ## [1.0.0]
 
 First packaged release. Launcher shell, store, library, downloads with resume,

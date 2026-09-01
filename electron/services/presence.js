@@ -134,7 +134,18 @@ class Presence {
           state: activity.details || undefined,
           timestamps: activity.startedAt ? { start: Math.floor(activity.startedAt / 1000) } : undefined,
           assets: { large_image: 'blacknight', large_text: 'BlackNight Launcher' },
-          instance: false
+          // A party turns "Playing Tidebreaker" into something joinable in
+          // chat rather than a line of text. Only sent when the title actually
+          // supports it, because an invite that goes nowhere is worse than no
+          // invite at all.
+          party: activity.party
+            ? { id: activity.party.id, size: [activity.party.size || 1, activity.party.max || 4] }
+            : undefined,
+          secrets: activity.party && activity.party.joinable
+            ? { join: activity.party.joinSecret || activity.party.id }
+            : undefined,
+          buttons: activity.link ? [{ label: 'View in launcher', url: activity.link }] : undefined,
+          instance: !!activity.party
         }
       : null;
 

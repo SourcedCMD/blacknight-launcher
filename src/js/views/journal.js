@@ -198,8 +198,10 @@
         `</foreignObject></svg>`;
 
       const img = new Image();
-      const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
+      // A data: URL rather than a blob: one. The launcher's CSP allows
+      // `img-src 'self' data:`, so a blob URL is refused outright and this
+      // failed silently in the packaged app while working in a plain browser.
+      const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 
       await new Promise((resolve, reject) => {
         img.onload = resolve;
@@ -213,7 +215,6 @@
       const ctx = canvas.getContext('2d');
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
 
       const dataUrl = canvas.toDataURL('image/png');
       const saved = await BN.api.app.savePoster?.(dataUrl, `BlackNight-${year}.png`);
