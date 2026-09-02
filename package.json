@@ -21,6 +21,7 @@
     "test": "node --test --test-timeout=60000",
     "test:server": "cd server && node --test --test-timeout=60000",
     "check:budget": "node scripts/check-budget.js",
+    "check:perf": "node scripts/perf.js",
     "art:snapshots": "node scripts/art-snapshots.js --write",
     "smoke": "node scripts/smoke.js",
     "services": "node server/index.js",

@@ -769,3 +769,16 @@
   color: var(--text-dim);
 }
 .review-mark { margin-top: 16px; opacity: 0.7; }
+
+/* The locked state of the swatch defined above, moved here from
+   components.css for the same reason. */
+.swatch.locked { opacity: 0.35; cursor: not-allowed; }
+.swatch.locked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    45deg, transparent, transparent 3px, rgba(255, 255, 255, 0.12) 3px, rgba(255, 255, 255, 0.12) 6px
+  );
+}

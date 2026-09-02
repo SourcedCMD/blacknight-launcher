@@ -104,6 +104,20 @@ function checkGame(game, index) {
   if (!game.price || !isNumber(game.price.usd)) fail(where, 'needs price.usd');
   if (game.price && game.price.usd < 0) fail(where, 'price.usd cannot be negative');
 
+  // `sale` is the discounted price in dollars, not a fraction. Checked here
+  // because the difference is invisible until the first title goes on sale.
+  if (game.price && game.price.sale !== undefined) {
+    if (!isNumber(game.price.sale) || game.price.sale < 0) {
+      fail(where, 'price.sale must be a number of dollars, or 0 for no sale');
+    } else if (game.price.sale > 0 && game.price.sale >= game.price.usd) {
+      fail(where, `price.sale (${game.price.sale}) is not cheaper than price.usd (${game.price.usd})`);
+    } else if (game.price.sale > 0 && game.price.sale < 1 && game.price.usd > 5) {
+      // A fraction where a price belongs: 0.25 meaning "25% off" would render
+      // as a 25 cent game.
+      note(where, `price.sale is ${game.price.sale} - if that meant 25% off, it should be the sale price in dollars`);
+    }
+  }
+
   if (!game.art || !isNumber(game.art.hue) || !isNumber(game.art.seed)) {
     fail(where, 'needs art.hue and art.seed');
   } else if (!MOTIFS.includes(game.art.motif)) {

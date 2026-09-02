@@ -26,6 +26,13 @@
 }
 
 /* A slow drifting sheen so the black never looks flat */
+/* The time-of-day wash, which used to sit in tokens.css - a file for
+   variables, not for rules about an element defined here. */
+#ambient {
+  background-image: radial-gradient(ellipse 120% 80% at 50% -10%, var(--phase-wash, transparent), transparent 70%);
+  transition: background-image 1200ms ease;
+}
+
 #ambient::after {
   content: '';
   position: absolute;
@@ -817,3 +824,33 @@ html[data-material='mica'] #ambient {
 }
 .handheld .pad-hint { display: inline-flex; }
 .pad-hint { display: none; }
+
+/* The popover form of the menu above. These rules used to sit in
+   components.css, a file away from the element they modify - which is how a
+   change lands in the wrong place and appears not to work. */
+.menu[popover] {
+  margin: 0;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  padding: 6px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg, 0 18px 50px -12px rgba(0, 0, 0, 0.7));
+  animation: menu-in 150ms var(--ease-out);
+}
+.menu[popover]::backdrop { background: transparent; }
+
+@supports (anchor-name: --a) {
+  .menu-anchored[popover] {
+    position: fixed;
+    top: anchor(bottom);
+    right: anchor(right);
+    /* The UA stylesheet gives an open popover inset:0, and a box with both
+       left and right set resolves to left - which pins the menu to the far
+       side of the screen. These have to be cleared explicitly. */
+    left: auto;
+    bottom: auto;
+    margin: 8px 0 0;
+    /* Flip above the button when there is no room below. */
+    position-try-fallbacks: flip-block;
+  }
+}

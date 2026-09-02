@@ -48,13 +48,18 @@ function encode(op, payload) {
 }
 
 class Presence {
-  constructor({ enabled = true, clientId = CLIENT_ID } = {}) {
+  constructor({ enabled = true, clientId = CLIENT_ID, log = null } = {}) {
     this.clientId = clientId;
+    this.log = log;
     this.enabled = enabled;
     this.socket = null;
     this.connected = false;
     this.current = null;
     this.retry = null;
+    // The launcher-is-open activity, and the game one if a session is running.
+    this.idle = null;
+    this.idleSince = null;
+    this.playing = null;
   }
 
   get configured() {
@@ -90,6 +95,7 @@ class Presence {
       // Any reply to the handshake means Discord accepted us.
       if (!this.connected) {
         this.connected = true;
+        this.log?.info('presence', `Connected to Discord on ipc-${index}`);
         if (this.current) this.setActivity(this.current);
       }
     });
@@ -102,7 +108,12 @@ class Presence {
       }
       // Try the next pipe index, then back off and start over.
       if (index < 9) this.connect(index + 1);
-      else this._scheduleRetry();
+      else {
+        // Said once per attempt rather than once per pipe, and at info: a
+        // Discord that is simply not running is the ordinary case, not a fault.
+        this.log?.info('presence', 'Discord is not running; will try again in 30s');
+        this._scheduleRetry();
+      }
     };
 
     socket.on('error', fail);
@@ -118,9 +129,39 @@ class Presence {
   }
 
   /**
+   * What to show while the launcher is open and nothing is running.
+   *
+   * Presence used to be published only during a play session, which meant that
+   * on a machine with no games installed - or any evening somebody browsed
+   * without starting anything - Discord showed nothing at all, and the feature
+   * looked broken when it was merely idle.
+   *
+   * Steam, Epic and GOG all do this. "In the launcher" is the floor; naming
+   * the screen is better, because it is true and it is more interesting.
+   */
+  setIdle(where = null) {
+    this.idleSince = this.idleSince || Date.now();
+    this.idle = {
+      title: 'BlackNight Launcher',
+      details: where || undefined,
+      startedAt: this.idleSince,
+      idle: true
+    };
+    // A running game always outranks the launcher.
+    if (!this.playing) this.setActivity(this.idle);
+  }
+
+  /**
    * `activity` is null to clear, or { title, details, startedAt }.
+   *
+   * Clearing while the launcher is still open falls back to the idle state
+   * rather than showing nothing, so closing a game returns to "in the
+   * launcher" instead of going blank.
    */
   setActivity(activity) {
+    this.playing = activity && !activity.idle ? activity : null;
+    if (!activity && this.idle) activity = this.idle;
+
     this.current = activity;
     if (!this.configured || !this.enabled) return;
     if (!this.connected) {
@@ -133,7 +174,13 @@ class Presence {
           details: activity.title,
           state: activity.details || undefined,
           timestamps: activity.startedAt ? { start: Math.floor(activity.startedAt / 1000) } : undefined,
-          assets: { large_image: 'blacknight', large_text: 'BlackNight Launcher' },
+          assets: {
+            // These names refer to art uploaded to the Discord application's
+            // Rich Presence assets. Without them Discord still shows the text,
+            // just no image - which is why a missing asset is not an error.
+            large_image: activity.idle ? 'launcher' : 'blacknight',
+            large_text: 'BlackNight Launcher'
+          },
           // A party turns "Playing Tidebreaker" into something joinable in
           // chat rather than a line of text. Only sent when the title actually
           // supports it, because an invite that goes nowhere is worse than no
@@ -157,13 +204,39 @@ class Presence {
           nonce: crypto.randomUUID()
         })
       );
-    } catch {
+      this.log?.info(
+        'presence',
+        payload ? `Showing "${payload.details}"${payload.state ? ` - ${payload.state}` : ''}` : 'Cleared'
+      );
+    } catch (err) {
       this.connected = false;
+      this.log?.info('presence', `Lost the Discord socket: ${err.message}`);
     }
   }
 
+  /** Ends the game activity, falling back to the launcher one. */
   clear() {
+    this.playing = null;
     this.setActivity(null);
+  }
+
+  /** Genuinely nothing, for quitting. */
+  clearAll() {
+    this.playing = null;
+    this.idle = null;
+    this.idleSince = null;
+    this.current = null;
+    if (this.connected && this.socket) {
+      try {
+        this.socket.write(
+          encode(OP_FRAME, {
+            cmd: 'SET_ACTIVITY',
+            args: { pid: process.pid, activity: null },
+            nonce: crypto.randomUUID()
+          })
+        );
+      } catch { /* going away anyway */ }
+    }
   }
 
   disconnect() {

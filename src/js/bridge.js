@@ -530,6 +530,7 @@
     },
 
     presence: {
+      async setRoute() { return { ok: true }; },
       async status() { return { state: 'unconfigured' }; },
       async setEnabled() { return { state: 'unconfigured' }; }
     },
@@ -545,6 +546,19 @@
     },
 
     app: {
+      // Added alongside their Electron counterparts. Without these the browser
+      // preview throws on a feature that works in the app, which is the hardest
+      // kind of difference to notice.
+      async openLauncher() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async mediaUsage() { return { count: 0, bytes: 0 }; },
+      async clearMedia() { return { ok: true }; },
+      async saveText() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async saveJson() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async openJson() { return { ok: false, cancelled: true }; },
+      async changelog() { return { ok: false, error: 'not-found' }; },
+      async readDoc() { return { ok: false, error: 'not-found' }; },
+      async smokeReport() { return { ok: true }; },
+      onSmoke() { return () => {}; },
       async info() {
         return {
           version: '1.0.0', electron: 'n/a (browser preview)', chrome: navigator.userAgent.match(/Chrome\/([\d.]+)/)?.[1] || 'n/a',

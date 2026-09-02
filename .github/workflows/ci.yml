@@ -76,6 +76,12 @@ jobs:
       - name: Check the performance budget
         run: npm run check:budget
 
+      # The same idea for the generators and formatters that run on every
+      # screen: measured, with budgets set at roughly eight times what the work
+      # costs today, so a doubling trips it.
+      - name: Check runtime performance
+        run: npm run check:perf
+
       # The catalog is hosted, so a bad field should fail here rather than on
       # someone's machine.
       - name: Validate the catalog

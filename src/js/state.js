@@ -181,8 +181,6 @@
 
   const installedGames = () => state.library.filter((g) => g.installed);
   const ownedGames = () => state.library.filter((g) => g.owned);
-  const releasedGames = () => state.library.filter((g) => g.status === 'released');
-  const upcomingGames = () => state.library.filter((g) => g.status !== 'released');
   const featuredGames = () => {
     const featured = state.library.filter((g) => g.featured);
     return featured.length ? featured : state.library.slice(0, 3);
@@ -219,6 +217,6 @@
     applyAppearance, loadSettings, loadCatalog, refreshLibrary, refreshDownloads,
     setSettings, signIn, signUp, signInOffline, signOut, updateProfile, afterAuth,
     game, install, acquire, uninstall, verify, launch, endSession, toggleFavorite, downloadAction,
-    installedGames, ownedGames, releasedGames, upcomingGames, featuredGames, activeDownloads, queueProgress
+    installedGames, ownedGames, featuredGames, activeDownloads, queueProgress
   };
 })();

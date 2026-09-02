@@ -93,9 +93,14 @@
     check('the library resolved', () => Array.isArray(BN.state.data.library));
     check('settings resolved', () => typeof BN.state.data.settings === 'object');
 
-    // Every route, rendered for real.
+    // Every route, rendered for real - and timed, because a view that takes
+    // half a second to appear is the difference between an app that feels
+    // instant and one that feels like a web page.
+    const timings = {};
     for (const route of ROUTES) {
+      const started = performance.now();
       BN.app.go(route);
+      timings[route] = Math.round(performance.now() - started);
       await settle();
       check(`route ${route} rendered`, () => {
         const view = document.getElementById(`view-${route}`);
@@ -104,6 +109,15 @@
         return true;
       });
     }
+
+    const slowest = Object.entries(timings).sort((a, b) => b[1] - a[1])[0];
+    say('ok    slowest view was ' + slowest[0] + ' at ' + slowest[1] + 'ms');
+
+    check('every view renders inside 150ms', () => {
+      const bad = Object.entries(timings).filter(([, t]) => t > 150);
+      if (bad.length) throw new Error(bad.map(([r, t]) => r + ' ' + t + 'ms').join(', '));
+      return true;
+    });
 
     // The modals, which are where most of the newer code lives.
     // openDetail directly rather than the gated wrapper: the age gate is its

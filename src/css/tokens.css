@@ -182,9 +182,5 @@
   --phase-wash: rgba(90, 120, 200, 0.06);
 }
 
-#ambient {
-  background-image: radial-gradient(ellipse 120% 80% at 50% -10%, var(--phase-wash, transparent), transparent 70%);
-  transition: background-image 1200ms ease;
-}
 
 :root { --phase-wash: rgba(90, 120, 200, 0.05); }

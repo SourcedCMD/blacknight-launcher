@@ -126,7 +126,8 @@ contextBridge.exposeInMainWorld('blacknight', {
 
   presence: {
     status: () => call('presence:status'),
-    setEnabled: (enabled) => call('presence:set-enabled', enabled)
+    setEnabled: (enabled) => call('presence:set-enabled', enabled),
+    setRoute: (route) => call('presence:route', route)
   },
 
   handoff: {

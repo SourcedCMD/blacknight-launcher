@@ -1051,33 +1051,6 @@ kbd {
 /* A popover lives in the top layer, so it needs its own positioning; anchor
    positioning ties it to the button without measuring anything in script. */
 
-.menu[popover] {
-  margin: 0;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  padding: 6px;
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-lg, 0 18px 50px -12px rgba(0, 0, 0, 0.7));
-  animation: menu-in 150ms var(--ease-out);
-}
-.menu[popover]::backdrop { background: transparent; }
-
-@supports (anchor-name: --a) {
-  .menu-anchored[popover] {
-    position: fixed;
-    top: anchor(bottom);
-    right: anchor(right);
-    /* The UA stylesheet gives an open popover inset:0, and a box with both
-       left and right set resolves to left - which pins the menu to the far
-       side of the screen. These have to be cleared explicitly. */
-    left: auto;
-    bottom: auto;
-    margin: 8px 0 0;
-    /* Flip above the button when there is no room below. */
-    position-try-fallbacks: flip-block;
-  }
-}
-
 /* --- Handoff -------------------------------------------------------------- */
 
 .handoff { display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -1201,17 +1174,6 @@ kbd {
 @keyframes pulse-soft { 50% { opacity: 0.4; } }
 
 /* --- Earned accents ------------------------------------------------------- */
-
-.swatch.locked { opacity: 0.35; cursor: not-allowed; }
-.swatch.locked::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: repeating-linear-gradient(
-    45deg, transparent, transparent 3px, rgba(255, 255, 255, 0.12) 3px, rgba(255, 255, 255, 0.12) 6px
-  );
-}
 
 /* --- Test chamber --------------------------------------------------------- */
 

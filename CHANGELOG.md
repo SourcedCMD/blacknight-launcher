@@ -8,6 +8,48 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **Discord rich presence now actually shows something.** The service was
+  correct and connected fine; it was only ever asked to publish during a play
+  session. On a machine with no games installed — or any evening somebody
+  browsed without starting anything — Discord showed nothing, and a working
+  feature looked broken. The launcher now publishes its own presence from
+  startup and follows the screen you are on, a running game outranks it, and
+  closing a game falls back to the launcher rather than going blank. Quitting
+  clears it outright.
+- **A sale would have displayed as pennies.** `price.sale` was read as a
+  fraction in one place and rendered as money in another; every title shipped
+  with `sale: 0`, so neither was ever visibly wrong. Settled on the discounted
+  price in dollars, used everywhere prices appear including the sort order,
+  enforced by the catalogue check, and defended at runtime — a value under a
+  hundredth of the list price is treated as a mistake rather than advertising a
+  seventy dollar game for twenty-five cents.
+
+### Added
+- `npm run check:perf`, measuring the generators and formatters that run on
+  every screen, with budgets at roughly eight times their current cost so a
+  doubling trips the build. Art memoisation is worth about 25x on a re-render.
+- Presence writes to the launcher log — connected, what it is showing, and why
+  it is not — so "my presence is not working" is answerable from a file.
+- `test/wiring.test.js`, doing what a bundler would in a project that has no
+  bundler: every script and stylesheet the page loads exists, every renderer
+  file is actually loaded, nothing reads another module before it is defined,
+  every preload channel has a handler, no channel is registered twice, the
+  browser bridge answers everything the preload does, and no selector is
+  defined in two stylesheets. It found ten bridge methods added this session
+  that the browser preview would have thrown on.
+
+### Changed
+- Removed genuinely dead code found by an audit: `releasedGames`,
+  `upcomingGames`, `throttle` and `frag` were exported and never called.
+  `priceOf` was dead too — that one was fixed by wiring it up rather than
+  deleting it, since the code that should have used it had the bug above.
+- `.menu[popover]` and `.swatch.locked` moved to the stylesheets that define
+  the elements they modify, rather than sitting a file away from them.
+- The time-of-day `#ambient` rule moved from `tokens.css`, which is for
+  variables, to `shell.css`, which is where the element lives.
+
+
 ### Added
 - **Screenshots.** Every image in the launcher was generated until now, which
   made the store a place you could not see what you were buying. A catalogue

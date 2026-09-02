@@ -44,11 +44,6 @@
   const esc = (value) =>
     String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  const frag = (html) => {
-    const t = document.createElement('template');
-    t.innerHTML = html.trim();
-    return t.content;
-  };
 
   /* --- Formatting ------------------------------------------------------ */
 
@@ -103,14 +98,42 @@
     }
   };
 
-  /** What a title actually costs today, sale included. */
+  /**
+   * What a title actually costs today.
+   *
+   * `price.sale` is the discounted price in dollars, or 0 for no sale. That
+   * definition matters because two parts of this codebase used to disagree:
+   * one treated it as a fraction and computed `list * (1 - sale)`, the other
+   * rendered it directly as money. Since every title shipped with `sale: 0`,
+   * neither was ever visibly wrong - but the first sale would have shown
+   * "$0.25" for a quarter off.
+   *
+   * Absolute wins because it is unambiguous, needs no rounding, and is what
+   * the display code already assumed.
+   *
+   * A sale that is not actually cheaper is ignored rather than shown, so a bad
+   * catalogue entry cannot advertise a discount that is not one.
+   */
   const priceOf = (game) => {
-    const list = game?.price?.usd ?? 0;
-    const sale = game?.price?.sale ?? 0;
-    // Rounded to cents. A discount computed in floating point gives numbers
-    // like 52.49249999999999, and a price is not a place for that.
-    const now = sale > 0 ? Math.round(list * (1 - sale) * 100) / 100 : list;
-    return { list, now, sale, discounted: sale > 0, saved: Math.round((list - now) * 100) / 100 };
+    const list = Math.max(0, game?.price?.usd ?? 0);
+    const sale = Math.max(0, game?.price?.sale ?? 0);
+
+    // A "sale" under a hundredth of the list price on a paid title is somebody
+    // having written a fraction where a price belongs. The catalogue check
+    // catches that, but the catalogue is fetched at runtime and can change
+    // without it, so the list price is shown rather than advertising a
+    // seventy dollar game for twenty-five cents.
+    const plausible = sale >= list / 100;
+    const discounted = sale > 0 && sale < list && plausible;
+
+    return {
+      list,
+      now: discounted ? sale : list,
+      discounted,
+      saved: discounted ? Math.round((list - sale) * 100) / 100 : 0,
+      percent: discounted ? Math.round((1 - sale / list) * 100) : 0,
+      free: list === 0
+    };
   };
 
   /** Parses a value as a date, treating bare YYYY-MM-DD as local rather than
@@ -155,23 +178,6 @@
     };
   }
 
-  function throttle(fn, wait = 60) {
-    let last = 0;
-    let queued = null;
-    return (...args) => {
-      const now = Date.now();
-      if (now - last >= wait) {
-        last = now;
-        fn(...args);
-      } else {
-        clearTimeout(queued);
-        queued = setTimeout(() => {
-          last = Date.now();
-          fn(...args);
-        }, wait - (now - last));
-      }
-    };
-  }
 
   /** Deterministic PRNG - the same seed always yields the same key art. */
   function rng(seed) {
@@ -303,9 +309,9 @@
 
   BN.util = {
     coverSvg,
-    $, $$, el, esc, frag, link, hasLink,
+    $, $$, el, esc, link, hasLink,
     bytes, speed, duration, playtime, money, priceOf, date, relative, countdown,
-    clamp, lerp, sleep, debounce, throttle, rng, hashString, initials, countTo,
+    clamp, lerp, sleep, debounce, rng, hashString, initials, countTo,
     bus
   };
 })();

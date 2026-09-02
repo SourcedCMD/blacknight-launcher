@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   const BN = (window.BN = window.BN || {});
-  const { el, esc, bytes, money, date, countdown, playtime } = BN.util;
+  const { el, esc, bytes, money, priceOf, date, countdown, playtime } = BN.util;
   const icon = BN.icon;
   // Looked up per call rather than captured, so changing locale takes effect
   // on the next render instead of needing a reload.
@@ -73,7 +73,12 @@
         : { key: 'pause', label: t('action.pause'), icon: 'pause', variant: 'btn-ghost' };
     }
     if (game.status === 'released') {
-      if (!game.owned && game.price.usd > 0) return { key: 'buy', label: money(game.price.usd), icon: 'store', variant: 'btn-chrome' };
+      // The button showed the list price while the tag beside it showed the
+      // sale price, which is the sort of disagreement people screenshot.
+      const price = priceOf(game);
+      if (!game.owned && !price.free) {
+        return { key: 'buy', label: money(price.now), icon: 'store', variant: 'btn-chrome' };
+      }
       return { key: 'install', label: t(game.owned ? 'action.install' : 'action.get'), icon: 'download', variant: 'btn-chrome' };
     }
     if (game.status === 'preorder') {
@@ -197,10 +202,17 @@
 
   const priceTag = (game) => {
     if (game.owned) return '<span class="price">In library</span>';
-    if (game.price.usd === 0) return '<span class="price free">Free</span>';
-    if (game.price.sale > 0)
-      return `<span class="price"><span class="was">${money(game.price.usd)}</span>${money(game.price.sale)}</span>`;
-    return `<span class="price">${money(game.price.usd)}</span>`;
+    const price = priceOf(game);
+    if (price.free) return '<span class="price free">Free</span>';
+    if (price.discounted) {
+      return (
+        `<span class="price">` +
+        `<span class="save">-${price.percent}%</span>` +
+        `<span class="was">${money(price.list)}</span>` +
+        `${money(price.now)}</span>`
+      );
+    }
+    return `<span class="price">${money(price.now)}</span>`;
   };
 
   /* --------------------------------------------------------------------- */

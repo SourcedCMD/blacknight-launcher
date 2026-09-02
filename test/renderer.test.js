@@ -450,3 +450,62 @@ test('a key French does not define falls back to English', () => {
   assert.equal(BN.t('action.close'), 'Close', 'and everything else stays readable');
   BN.i18n.setLocale('en');
 });
+
+/* --- Prices -------------------------------------------------------------- */
+
+/**
+ * `price.sale` is the discounted price in dollars, not a fraction. Two parts
+ * of the codebase used to disagree about that, and since every title shipped
+ * with `sale: 0` neither was ever visibly wrong.
+ */
+test('a title with no sale costs its list price', () => {
+  const price = BN.util.priceOf({ price: { usd: 69.99, sale: 0 } });
+  assert.equal(price.now, 69.99);
+  assert.equal(price.discounted, false);
+  assert.equal(price.saved, 0);
+});
+
+test('a real sale is the price people pay', () => {
+  const price = BN.util.priceOf({ price: { usd: 69.99, sale: 49.99 } });
+  assert.equal(price.now, 49.99);
+  assert.equal(price.list, 69.99);
+  assert.equal(price.discounted, true);
+  assert.equal(price.saved, 20);
+  assert.equal(price.percent, 29);
+});
+
+test('a fraction where a price belongs is refused', () => {
+  // 0.25 meaning "25% off" would otherwise advertise a 70 dollar game for 25p.
+  const price = BN.util.priceOf({ price: { usd: 69.99, sale: 0.25 } });
+  assert.equal(price.discounted, false, 'not treated as a discount');
+  assert.equal(price.now, 69.99, 'the list price is shown instead');
+});
+
+test('a steep but plausible sale still works', () => {
+  const price = BN.util.priceOf({ price: { usd: 69.99, sale: 5.99 } });
+  assert.equal(price.discounted, true);
+  assert.equal(price.now, 5.99);
+});
+
+test('a sale dearer than the list price is not a sale', () => {
+  const price = BN.util.priceOf({ price: { usd: 20, sale: 30 } });
+  assert.equal(price.discounted, false);
+  assert.equal(price.now, 20);
+});
+
+test('free is free, and never on sale', () => {
+  const price = BN.util.priceOf({ price: { usd: 0, sale: 0 } });
+  assert.equal(price.free, true);
+  assert.equal(price.discounted, false);
+});
+
+test('a missing or malformed price does not throw', () => {
+  for (const game of [{}, { price: {} }, { price: { usd: null } }, null, undefined]) {
+    const price = BN.util.priceOf(game);
+    assert.equal(price.free, true, 'and reads as free rather than NaN');
+  }
+});
+
+test('a negative price is clamped rather than displayed', () => {
+  assert.equal(BN.util.priceOf({ price: { usd: -5, sale: -1 } }).now, 0);
+});

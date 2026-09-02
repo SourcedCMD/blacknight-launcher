@@ -20,8 +20,10 @@
   const SORTS = {
     featured: (a, b) => Number(b.featured) - Number(a.featured) || a.title.localeCompare(b.title),
     release: (a, b) => new Date(a.releaseDate) - new Date(b.releaseDate),
-    'price-low': (a, b) => a.price.usd - b.price.usd,
-    'price-high': (a, b) => b.price.usd - a.price.usd,
+    // Sorted on what a title actually costs today, not its list price - a
+    // sale that does not move it in the list is a sale nobody finds.
+    'price-low': (a, b) => BN.util.priceOf(a).now - BN.util.priceOf(b).now,
+    'price-high': (a, b) => BN.util.priceOf(b).now - BN.util.priceOf(a).now,
     title: (a, b) => a.title.localeCompare(b.title),
     size: (a, b) => b.sizeBytes - a.sizeBytes
   };

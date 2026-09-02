@@ -590,6 +590,9 @@
 
   function go(next, arg) {
     if (!ROUTES.includes(next)) next = 'games';
+    // Discord shows which screen somebody is on. Fire and forget: presence is
+    // never worth delaying a navigation for.
+    BN.api.presence?.setRoute?.(next);
     const previous = route;
     if (previous !== next) BN.views[previous]?.onLeave?.();
     route = next;

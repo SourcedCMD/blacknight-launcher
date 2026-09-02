@@ -260,7 +260,7 @@ function bootServices() {
     betaChannel: settings.get('betaChannel') === true
   });
   hardware = new Hardware(app, settings);
-  presence = new Presence({ enabled: settings.get('richPresence') !== false });
+  presence = new Presence({ enabled: settings.get('richPresence') !== false, log });
 
   achievements = new Achievements(dataDir, library);
   overlay = new Overlay(settings, log);
@@ -296,6 +296,17 @@ function bootServices() {
     });
   };
   presence.connect();
+
+  /**
+   * Presence for the launcher itself.
+   *
+   * Published as soon as the launcher is up rather than only during a play
+   * session. Without this, somebody with no games installed - or anybody
+   * browsing on an ordinary evening - showed nothing at all on Discord, and
+   * the feature looked broken when it was only idle.
+   */
+  presence.setIdle('In the launcher');
+
   if (settings.get('lanSharing')) peers.start();
   if (settings.get('overlayEnabled')) overlay.start();
 
@@ -989,6 +1000,29 @@ function registerIpc() {
 
   /* Rich presence ----------------------------------------------------- */
   handle('presence:status', () => presence.status());
+
+  /**
+   * The screen somebody is on, which is more interesting than "in the
+   * launcher" and costs nothing to know.
+   *
+   * An allowlist rather than free text: this string ends up on a public
+   * profile, and a renderer should not be able to write anything it likes
+   * there.
+   */
+  const ROUTE_PRESENCE = {
+    games: 'Browsing the library',
+    store: 'Browsing the store',
+    plus: 'Looking at BlackNight+',
+    downloads: 'Watching a download',
+    settings: 'In settings',
+    profile: 'Looking at their profile'
+  };
+
+  handle('presence:route', (route) => {
+    const where = ROUTE_PRESENCE[String(route)] || 'In the launcher';
+    presence.setIdle(where);
+    return { ok: true };
+  });
   handle('presence:set-enabled', (enabled) => {
     settings.set('richPresence', !!enabled);
     return presence.setEnabled(enabled);
@@ -1310,6 +1344,9 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     globalShortcut.unregisterAll();
     downloader?.shutdown();
+    // Cleared outright: leaving "in the launcher" showing after the launcher
+    // has quit is exactly the sort of stale presence people complain about.
+    presence?.clearAll();
     presence?.disconnect();
     library?.presenceCount?.stopAll();
     peers?.stop();
