@@ -224,6 +224,33 @@ function bootServices() {
   // Remote if configured and reachable, then the last good fetch, then the
   // copy that shipped. Always correct offline, current whenever it can be.
   catalogStore = new Catalog(dataDir, path.join(__dirname, 'data', 'catalog.json'), settings, log);
+
+  /**
+   * The fictional slate, for screenshots and for exercising the store.
+   *
+   * The shipped catalogue has one title in it, because one title is what
+   * BlackNight Studios actually has. Six invented ones with invented prices
+   * made a well-built launcher read as a mockup, and got worse the more real
+   * everything around them became.
+   *
+   * They are kept rather than deleted - a store with one free item cannot
+   * demonstrate filtering, sorting or a price - and loaded only when asked
+   * for explicitly:
+   *
+   *   npm run dev -- --sample-data
+   */
+  if (process.argv.includes('--sample-data')) {
+    try {
+      const sample = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'catalog.sample.json'), 'utf8'));
+      if (Catalog.valid(sample)) {
+        catalogStore.data = sample;
+        catalogStore.source = 'sample';
+        log.warn('catalog', `Sample data: ${sample.games.length} invented titles. Not for release.`);
+      }
+    } catch (err) {
+      log.warn('catalog', `Could not read the sample catalogue: ${err.message}`);
+    }
+  }
   catalog = catalogStore.data;
   log.info('catalog', `Loaded ${catalog.games.length} titles from the ${catalogStore.source} catalog`);
   if (!settings.get('installDir')) settings.set('installDir', defaultInstallDir());

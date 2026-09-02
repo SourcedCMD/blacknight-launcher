@@ -1,11 +1,12 @@
 # 🌑 BlackNight Studios Launcher
 
 <p align="center">
-  <img src="BNSBANNER1.png" alt="BlackNight Studios" width="100%">
+  <img src="docs/BNSBANNER1.png" alt="BlackNight Studios" width="100%">
 </p>
 
 <p align="center">
-  <strong>One launcher. Every BlackNight experience.</strong>
+  <strong>One launcher. Every BlackNight experience.</strong><br>
+  <sub>Built and working — waiting on its first game.</sub>
 </p>
 
 <p align="center">
@@ -23,7 +24,9 @@
 
 **BlackNight Studios Launcher** is the official custom game launcher developed for **BlackNight Studios**.
 
-The launcher serves as the central hub for all games created and published by BlackNight Studios, providing players with a single, streamlined application to discover, install, update, launch, and manage their BlackNight games.
+The launcher is the central hub for games created and published by BlackNight Studios: one application to discover, install, update, launch and manage them.
+
+**Where this actually is today:** the launcher is built and works end to end — downloads with resume and retry, delta patching, LAN peer install, cloud saves, local accounts and passkeys, and a services backend. What it does *not* yet have is a game. The catalogue ships one free tech demo, and no title carries a download URL, so a packaged launcher currently has nothing to install. That is the honest state of it, and it is the next thing to change.
 
 Built with a focus on **performance, simplicity, security, and atmosphere**, the launcher is designed to grow alongside the studio and its game library.
 

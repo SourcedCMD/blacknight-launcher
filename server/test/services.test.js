@@ -43,7 +43,19 @@ test.before(async () => {
   // Port 0 lets the OS choose, and the server prints where it landed.
   child = spawn(process.execPath, [path.join(ROOT, 'index.js')], {
     cwd: ROOT,
-    env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ADMIN_TOKEN: ADMIN, RESET_ECHO: '1', RATE_LIMITS: 'off' },
+    env: {
+      ...process.env,
+      PORT: '0',
+      DATA_DIR: dataDir,
+      ADMIN_TOKEN: ADMIN,
+      RESET_ECHO: '1',
+      RATE_LIMITS: 'off',
+      // The shipped catalogue has one title in it, because one title is what
+      // the studio has. These tests need several to say anything about
+      // per-title behaviour, so they use the sample slate - which exists for
+      // exactly this and cannot shrink underneath them.
+      CATALOG_FILE: path.join(ROOT, '..', 'electron', 'data', 'catalog.sample.json')
+    },
     stdio: ['ignore', 'pipe', 'pipe']
   });
 

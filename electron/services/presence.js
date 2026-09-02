@@ -31,6 +31,16 @@ const OP_CLOSE = 2;
  */
 const CLIENT_ID = '1543980440615129159';
 
+/**
+ * The name of the artwork to show alongside the presence.
+ *
+ * Empty until something is uploaded under Rich Presence > Art Assets for the
+ * application above. Naming art that does not exist is not an error - Discord
+ * drops it and shows the text - but it is a promise the application cannot
+ * keep, so it stays empty until it can.
+ */
+const ASSET_KEY = '';
+
 /** Discord probes ipc-0 through ipc-9 to find a running client. */
 function socketPath(index) {
   if (process.platform === 'win32') return path.join('\\\\?\\pipe', `discord-ipc-${index}`);
@@ -66,11 +76,25 @@ class Presence {
     return !!this.clientId;
   }
 
-  /** Reports why presence is or is not running, for the settings panel. */
+  /**
+   * Why presence is or is not running, and what it is showing.
+   *
+   * The `showing` line matters more than it looks: when somebody says presence
+   * is not working, the first question is whether the launcher is publishing
+   * anything at all. If it is, the problem is Discord's own privacy setting
+   * rather than this code, and the panel can say so instead of leaving them to
+   * guess.
+   */
   status() {
     if (!this.configured) return { state: 'unconfigured' };
     if (!this.enabled) return { state: 'off' };
-    return { state: this.connected ? 'connected' : 'waiting' };
+
+    return {
+      state: this.connected ? 'connected' : 'waiting',
+      showing: this.connected && this.current
+        ? [this.current.title, this.current.details].filter(Boolean).join(' - ')
+        : null
+    };
   }
 
   setEnabled(enabled) {
@@ -174,13 +198,21 @@ class Presence {
           details: activity.title,
           state: activity.details || undefined,
           timestamps: activity.startedAt ? { start: Math.floor(activity.startedAt / 1000) } : undefined,
-          assets: {
-            // These names refer to art uploaded to the Discord application's
-            // Rich Presence assets. Without them Discord still shows the text,
-            // just no image - which is why a missing asset is not an error.
-            large_image: activity.idle ? 'launcher' : 'blacknight',
-            large_text: 'BlackNight Launcher'
-          },
+          /**
+           * Art, only if the application actually has any.
+           *
+           * `large_image` names an asset uploaded under Rich Presence > Art
+           * Assets in the Discord developer portal. This application has none,
+           * and sending a key for art that does not exist means Discord
+           * silently drops the image and keeps the rest - verified against a
+           * live client. Harmless, but it is a reference to something that is
+           * not there, so it is not sent until there is art to name.
+           *
+           * Set ASSET_KEY once the art is uploaded and both images appear.
+           */
+          assets: ASSET_KEY
+            ? { large_image: ASSET_KEY, large_text: 'BlackNight Launcher' }
+            : { large_text: 'BlackNight Launcher' },
           // A party turns "Playing Tidebreaker" into something joinable in
           // chat rather than a line of text. Only sent when the title actually
           // supports it, because an invite that goes nowhere is worse than no

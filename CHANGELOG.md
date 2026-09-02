@@ -8,6 +8,44 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- **The catalogue ships one title.** It carried seven invented games with
+  invented prices, editions and news, and published seven share pages for them
+  on the public site. That was fine for a prototype and stopped being fine as
+  everything around it became real: age ratings, purchase history, local
+  currency and a store made a well-built launcher read as a claim that the
+  studio has seven games. It has a tech demo, so the catalogue has a tech demo.
+- The invented slate is kept as `electron/data/catalog.sample.json` rather than
+  deleted — a store with one free item cannot demonstrate filtering, sorting or
+  a price — and loads only when asked for: `npm run dev:sample`. The launcher
+  logs a warning when it is in use, so a screenshot build cannot be mistaken
+  for a release one.
+- The six orphaned share pages are gone; `npm run og` now writes one.
+- The README says where this actually is: built and working end to end, with no
+  game yet and no title carrying a download URL.
+- Version 1.1.0. Seventy changelog entries had accumulated under a patch
+  number.
+- The banner moved out of the repository root into `docs/`.
+
+### Fixed
+- Presence no longer names artwork that does not exist. The application has no
+  Rich Presence art uploaded, and `large_image: 'launcher'` referred to a key
+  with nothing behind it — verified against a live Discord client, which
+  accepts the activity and silently drops the image. Harmless, but a promise
+  the application could not keep.
+- The services suite is pinned to the sample catalogue. It asserted things
+  about several titles, which quietly became untrue when the shipped catalogue
+  shrank to one.
+
+### Added
+- The presence settings row says what it is currently publishing, and names the
+  Discord setting — Activity Privacy, "Share your detected activities with
+  others" — that hides it when the launcher is connected and publishing but a
+  profile still shows nothing.
+
+
+## [1.1.0] - 2026-09-02
+
 ### Fixed
 - **Discord rich presence now actually shows something.** The service was
   correct and connected fine; it was only ever asked to publish during a play

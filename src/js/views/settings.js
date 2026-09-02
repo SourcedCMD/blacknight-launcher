@@ -1008,7 +1008,7 @@
     unconfigured: 'No Discord application is configured for this build, so nothing is shared.',
     off: 'Your current title stays on this machine.',
     waiting: 'Waiting for Discord. Nothing is shared until it is running.',
-    connected: 'Connected to Discord. Your current title shows on your profile.'
+    connected: 'Connected to Discord.'
   };
 
   function presenceRow() {
@@ -1016,10 +1016,21 @@
 
     const paint = (status) => {
       const enabled = BN.state.data.settings.richPresence && status.state !== 'unconfigured';
+      /**
+       * When the launcher is connected and publishing, and somebody still sees
+       * nothing on their profile, the cause is Discord's own privacy switch.
+       * Naming it here turns "it does not work" into one thing to check.
+       */
+      const detail = status.showing
+        ? `${esc(PRESENCE_COPY[status.state])} Currently showing &ldquo;${esc(status.showing)}&rdquo;. ` +
+          'If your profile shows nothing, turn on Activity Privacy &rarr; ' +
+          '&ldquo;Share your detected activities with others&rdquo; in Discord.'
+        : esc(PRESENCE_COPY[status.state] || PRESENCE_COPY.off);
+
       node.innerHTML = `
         <div class="grow">
           <div class="label">Share what I am playing</div>
-          <div class="desc">${esc(PRESENCE_COPY[status.state] || PRESENCE_COPY.off)}</div>
+          <div class="desc">${detail}</div>
         </div>`;
 
       const control = el('div', { class: 'control' });

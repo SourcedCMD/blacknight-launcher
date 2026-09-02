@@ -1,0 +1,535 @@
+{
+  "catalogVersion": 1,
+  "updated": "2026-08-31",
+  "games": [
+    {
+      "id": "eclipse-protocol",
+      "title": "Eclipse Protocol",
+      "shortTitle": "Eclipse",
+      "subtitle": "Chapter One",
+      "tagline": "The city sleeps. You do not.",
+      "description": "A neon-drenched open-world crime saga set in a megacity that never sees the sun. Build a crew, run the districts, and decide what the night costs you. Eclipse Protocol is the flagship debut from BlackNight Studios: a living city of 400,000 simulated residents, seamless interiors, and a reputation system where every contract rewrites who will still take your call.",
+      "genre": [
+        "Open World",
+        "Action",
+        "Crime"
+      ],
+      "developer": "BlackNight Studios",
+      "publisher": "BlackNight Studios",
+      "status": "preorder",
+      "releaseDate": "2027-03-19",
+      "price": {
+        "usd": 69.99,
+        "sale": 0
+      },
+      "sizeBytes": 96636764160,
+      "rating": "M",
+      "playersOnline": null,
+      "featured": true,
+      "tags": [
+        "Single-player",
+        "Online Co-op",
+        "Controller",
+        "Ray Tracing",
+        "Ultrawide"
+      ],
+      "art": {
+        "motif": "city",
+        "hue": 212,
+        "seed": 7331
+      },
+      "editions": [
+        {
+          "id": "standard",
+          "name": "Standard Edition",
+          "usd": 69.99,
+          "perks": [
+            "Base game"
+          ]
+        },
+        {
+          "id": "deluxe",
+          "name": "Nightfall Edition",
+          "usd": 89.99,
+          "perks": [
+            "Base game",
+            "Chrome weapon set",
+            "72h early access",
+            "Digital artbook"
+          ]
+        },
+        {
+          "id": "collectors",
+          "name": "Eclipse Collector Edition",
+          "usd": 129.99,
+          "perks": [
+            "Everything in Nightfall",
+            "Season pass",
+            "In-game apartment",
+            "Lossless soundtrack"
+          ]
+        }
+      ],
+      "features": [
+        "4K / 60fps",
+        "HDR10",
+        "Haptic triggers",
+        "Cross-save"
+      ],
+      "requirements": {
+        "minimum": {
+          "os": "Windows 10 64-bit",
+          "cpu": "Intel i5-8400 / Ryzen 5 2600",
+          "ram": "12 GB",
+          "gpu": "GTX 1660 6GB",
+          "storage": "90 GB SSD"
+        },
+        "recommended": {
+          "os": "Windows 11 64-bit",
+          "cpu": "Intel i7-12700K / Ryzen 7 5800X3D",
+          "ram": "32 GB",
+          "gpu": "RTX 4070 12GB",
+          "storage": "90 GB NVMe"
+        }
+      }
+    },
+    {
+      "id": "ashfall",
+      "title": "Ashfall",
+      "shortTitle": "Ashfall",
+      "subtitle": "",
+      "tagline": "Some winters never end.",
+      "description": "A survival western on a continent choking under volcanic ash. Track, trade, and betray across six territories where the weather is an enemy with a schedule. Every settlement you save changes the map for every other player in your session.",
+      "genre": [
+        "Survival",
+        "Western",
+        "RPG"
+      ],
+      "developer": "BlackNight Studios",
+      "publisher": "BlackNight Studios",
+      "status": "announced",
+      "releaseDate": "2027-11-05",
+      "price": {
+        "usd": 59.99,
+        "sale": 0
+      },
+      "sizeBytes": 75161927680,
+      "rating": "M",
+      "playersOnline": null,
+      "featured": true,
+      "tags": [
+        "Single-player",
+        "Open World",
+        "Survival",
+        "Controller"
+      ],
+      "art": {
+        "motif": "peaks",
+        "hue": 26,
+        "seed": 4102
+      },
+      "editions": [
+        {
+          "id": "standard",
+          "name": "Standard Edition",
+          "usd": 59.99,
+          "perks": [
+            "Base game"
+          ]
+        }
+      ],
+      "features": [
+        "Dynamic weather sim",
+        "Photo mode",
+        "Mod support"
+      ],
+      "requirements": {
+        "minimum": {
+          "os": "Windows 10 64-bit",
+          "cpu": "Intel i5-9400 / Ryzen 5 3600",
+          "ram": "16 GB",
+          "gpu": "RTX 2060 6GB",
+          "storage": "70 GB SSD"
+        },
+        "recommended": {
+          "os": "Windows 11 64-bit",
+          "cpu": "Intel i7-13700 / Ryzen 7 7800X3D",
+          "ram": "32 GB",
+          "gpu": "RTX 4070 Ti",
+          "storage": "70 GB NVMe"
+        }
+      }
+    },
+    {
+      "id": "null-horizon",
+      "title": "Null Horizon",
+      "shortTitle": "Null",
+      "subtitle": "Deep Field",
+      "tagline": "Nothing out here is empty.",
+      "description": "Hard sci-fi exploration at the edge of a collapsing system. Salvage derelicts, manage a crew that remembers what you did last cycle, and outrun a horizon closing in faster than you can burn. Built on the Umbra engine with fully simulated orbital mechanics.",
+      "genre": [
+        "Sci-Fi",
+        "Exploration",
+        "Simulation"
+      ],
+      "developer": "BlackNight Studios",
+      "publisher": "BlackNight Studios",
+      "status": "coming-soon",
+      "releaseDate": "2028-06-12",
+      "price": {
+        "usd": 49.99,
+        "sale": 0
+      },
+      "sizeBytes": 53687091200,
+      "rating": "T",
+      "playersOnline": null,
+      "featured": true,
+      "tags": [
+        "Single-player",
+        "Simulation",
+        "Sandbox",
+        "Deck Verified"
+      ],
+      "art": {
+        "motif": "orbit",
+        "hue": 268,
+        "seed": 9021
+      },
+      "editions": [
+        {
+          "id": "standard",
+          "name": "Standard Edition",
+          "usd": 49.99,
+          "perks": [
+            "Base game"
+          ]
+        }
+      ],
+      "features": [
+        "Newtonian flight",
+        "Procedural systems",
+        "VR ready"
+      ],
+      "requirements": {
+        "minimum": {
+          "os": "Windows 10 64-bit",
+          "cpu": "Intel i5-10400 / Ryzen 5 3600",
+          "ram": "16 GB",
+          "gpu": "RTX 3060",
+          "storage": "50 GB SSD"
+        },
+        "recommended": {
+          "os": "Windows 11 64-bit",
+          "cpu": "Intel i9-13900 / Ryzen 9 7900X",
+          "ram": "32 GB",
+          "gpu": "RTX 4080",
+          "storage": "50 GB NVMe"
+        }
+      }
+    },
+    {
+      "id": "midnight-circuit",
+      "title": "Midnight Circuit",
+      "shortTitle": "Circuit",
+      "subtitle": "",
+      "tagline": "Own every street before sunrise.",
+      "description": "Illegal street racing across three coastal cities, with a garage deep enough to lose a weekend in. Season-based online events, crew territory wars, and a handling model tuned by people who care far too much about tyre temperature.",
+      "genre": [
+        "Racing",
+        "Online",
+        "Arcade"
+      ],
+      "developer": "BlackNight Studios",
+      "publisher": "BlackNight Studios",
+      "status": "coming-soon",
+      "releaseDate": "2027-08-27",
+      "price": {
+        "usd": 39.99,
+        "sale": 0
+      },
+      "sizeBytes": 42949672960,
+      "rating": "T",
+      "playersOnline": null,
+      "featured": false,
+      "tags": [
+        "Multiplayer",
+        "Racing",
+        "Controller",
+        "Cross-play"
+      ],
+      "art": {
+        "motif": "circuit",
+        "hue": 340,
+        "seed": 5150
+      },
+      "editions": [
+        {
+          "id": "standard",
+          "name": "Standard Edition",
+          "usd": 39.99,
+          "perks": [
+            "Base game"
+          ]
+        }
+      ],
+      "features": [
+        "Cross-play",
+        "Seasonal events",
+        "Livery editor"
+      ],
+      "requirements": {
+        "minimum": {
+          "os": "Windows 10 64-bit",
+          "cpu": "Intel i5-8400 / Ryzen 5 2600",
+          "ram": "12 GB",
+          "gpu": "GTX 1660",
+          "storage": "40 GB SSD"
+        },
+        "recommended": {
+          "os": "Windows 11 64-bit",
+          "cpu": "Intel i7-12700 / Ryzen 7 5800X",
+          "ram": "16 GB",
+          "gpu": "RTX 4060 Ti",
+          "storage": "40 GB NVMe"
+        }
+      }
+    },
+    {
+      "id": "hollow-choir",
+      "title": "Hollow Choir",
+      "shortTitle": "Choir",
+      "subtitle": "",
+      "tagline": "Listen. It knows your name.",
+      "description": "First-person psychological horror set inside a cathedral that rearranges itself between glances. No weapons, no HUD, no second chances: only sound design that will make you take the headphones off and put them straight back on.",
+      "genre": [
+        "Horror",
+        "First-Person",
+        "Narrative"
+      ],
+      "developer": "BlackNight Studios",
+      "publisher": "BlackNight Studios",
+      "status": "announced",
+      "releaseDate": "2028-10-31",
+      "price": {
+        "usd": 29.99,
+        "sale": 0
+      },
+      "sizeBytes": 26843545600,
+      "rating": "M",
+      "playersOnline": null,
+      "featured": false,
+      "tags": [
+        "Single-player",
+        "Horror",
+        "Atmospheric",
+        "Story Rich"
+      ],
+      "art": {
+        "motif": "ruins",
+        "hue": 152,
+        "seed": 6660
+      },
+      "editions": [
+        {
+          "id": "standard",
+          "name": "Standard Edition",
+          "usd": 29.99,
+          "perks": [
+            "Base game"
+          ]
+        }
+      ],
+      "features": [
+        "Binaural audio",
+        "Ray-traced lighting"
+      ],
+      "requirements": {
+        "minimum": {
+          "os": "Windows 10 64-bit",
+          "cpu": "Intel i5-9400 / Ryzen 5 3600",
+          "ram": "12 GB",
+          "gpu": "RTX 2060",
+          "storage": "25 GB SSD"
+        },
+        "recommended": {
+          "os": "Windows 11 64-bit",
+          "cpu": "Intel i7-12700 / Ryzen 7 5800X",
+          "ram": "16 GB",
+          "gpu": "RTX 4070",
+          "storage": "25 GB NVMe"
+        }
+      }
+    },
+    {
+      "id": "tidebreaker",
+      "title": "Tidebreaker",
+      "shortTitle": "Tide",
+      "subtitle": "",
+      "tagline": "The map is drowning. Move.",
+      "description": "A 40-player extraction shooter on a chain of sinking islands. The playable area does not shrink into a circle, it goes underwater floor by floor, and the best loot is always on the level that floods next.",
+      "genre": [
+        "Shooter",
+        "Multiplayer",
+        "Extraction"
+      ],
+      "developer": "BlackNight Studios",
+      "publisher": "BlackNight Studios",
+      "status": "coming-soon",
+      "releaseDate": "2027-05-14",
+      "price": {
+        "usd": 0,
+        "sale": 0
+      },
+      "sizeBytes": 64424509440,
+      "rating": "M",
+      "playersOnline": null,
+      "featured": false,
+      "tags": [
+        "Free to Play",
+        "Multiplayer",
+        "PvPvE",
+        "Cross-play"
+      ],
+      "art": {
+        "motif": "sea",
+        "hue": 190,
+        "seed": 8080
+      },
+      "editions": [
+        {
+          "id": "standard",
+          "name": "Free to Play",
+          "usd": 0,
+          "perks": [
+            "Full game, free"
+          ]
+        }
+      ],
+      "features": [
+        "Free to play",
+        "Cross-play",
+        "Seasonal wipes"
+      ],
+      "requirements": {
+        "minimum": {
+          "os": "Windows 10 64-bit",
+          "cpu": "Intel i5-10400 / Ryzen 5 3600",
+          "ram": "16 GB",
+          "gpu": "RTX 2070",
+          "storage": "60 GB SSD"
+        },
+        "recommended": {
+          "os": "Windows 11 64-bit",
+          "cpu": "Intel i7-13700K / Ryzen 7 7700X",
+          "ram": "32 GB",
+          "gpu": "RTX 4070 Super",
+          "storage": "60 GB NVMe"
+        }
+      }
+    },
+    {
+      "id": "blacknight-demo",
+      "title": "BlackNight Tech Demo",
+      "shortTitle": "Umbra",
+      "subtitle": "Umbra Engine Showcase",
+      "tagline": "See what the engine can do.",
+      "description": "A free, downloadable showcase of the Umbra engine: volumetric night lighting, cloth and hair simulation, and the crowd system powering Eclipse Protocol. Includes a built-in benchmark that reports frame pacing, 1% lows, and a suggested preset for your machine.",
+      "genre": [
+        "Tech Demo",
+        "Benchmark"
+      ],
+      "developer": "BlackNight Studios",
+      "publisher": "BlackNight Studios",
+      "status": "released",
+      "releaseDate": "2026-08-01",
+      "price": {
+        "usd": 0,
+        "sale": 0
+      },
+      "sizeBytes": 8589934592,
+      "rating": "E",
+      "playersOnline": null,
+      "featured": false,
+      "tags": [
+        "Free",
+        "Benchmark",
+        "Ray Tracing",
+        "DLSS / FSR"
+      ],
+      "art": {
+        "motif": "orbit",
+        "hue": 200,
+        "seed": 1111
+      },
+      "editions": [
+        {
+          "id": "standard",
+          "name": "Free Download",
+          "usd": 0,
+          "perks": [
+            "Full demo"
+          ]
+        }
+      ],
+      "features": [
+        "Built-in benchmark",
+        "Ray tracing",
+        "DLSS 3 / FSR 3"
+      ],
+      "requirements": {
+        "minimum": {
+          "os": "Windows 10 64-bit",
+          "cpu": "Intel i5-8400 / Ryzen 5 2600",
+          "ram": "8 GB",
+          "gpu": "GTX 1060",
+          "storage": "8 GB SSD"
+        },
+        "recommended": {
+          "os": "Windows 11 64-bit",
+          "cpu": "Intel i7-12700 / Ryzen 7 5800X",
+          "ram": "16 GB",
+          "gpu": "RTX 4060",
+          "storage": "8 GB NVMe"
+        }
+      }
+    }
+  ],
+  "news": [
+    {
+      "id": "n1",
+      "kind": "Announcement",
+      "title": "Eclipse Protocol pre-orders are open",
+      "body": "Nightfall and Collector editions are live now, with 72-hour early access and the chrome weapon set for anyone who pre-orders before launch week.",
+      "gameId": "eclipse-protocol",
+      "date": "2026-08-28",
+      "cta": "View editions"
+    },
+    {
+      "id": "n2",
+      "kind": "Studio",
+      "title": "Umbra Engine: behind the night lighting",
+      "body": "Our rendering leads break down the volumetric system that lets a single streetlight carry an entire district, and why we rebuilt shadows from scratch.",
+      "gameId": "blacknight-demo",
+      "date": "2026-08-21",
+      "cta": "Read the breakdown"
+    },
+    {
+      "id": "n3",
+      "kind": "Update",
+      "title": "Launcher 1.0: faster downloads, cleaner nights",
+      "body": "Resumable downloads, per-title bandwidth caps, and a rebuilt library that remembers how you actually play.",
+      "gameId": null,
+      "date": "2026-08-31",
+      "cta": "See what is new"
+    },
+    {
+      "id": "n4",
+      "kind": "Community",
+      "title": "Tidebreaker closed playtest sign-ups",
+      "body": "Two weekends, 40-player lobbies, NDA lifted at the end. BlackNight+ members get guaranteed entry.",
+      "gameId": "tidebreaker",
+      "date": "2026-08-14",
+      "cta": "Request access"
+    }
+  ]
+}
