@@ -382,3 +382,335 @@ test('a ghost knows when the current run is the longest yet', () => {
 
   assert.equal(library.ghost('demo').personalBest, true);
 });
+
+/* --- Sessions that outlive the launcher ---------------------------------- */
+
+test('a session open when the launcher died is credited on the next start', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  settings.set('installDir', path.join(dir, 'games'));
+
+  // A library that thinks a session started ninety minutes ago and never ended.
+  const first = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  first.store.get('entries').demo = {
+    gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0
+  };
+  first.store.set('openSessions', { demo: { pid: 1234, startedAt: Date.now() - 90 * 60000 } });
+
+  // Restarting is what triggers recovery.
+  const second = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  const entry = second.store.get('entries').demo;
+
+  assert.ok(entry.playtimeSeconds >= 89 * 60, `credited ${entry.playtimeSeconds}s`);
+  assert.ok(entry.playtimeSeconds <= 91 * 60);
+  assert.deepEqual(second.store.get('openSessions'), {}, 'and the record is cleared');
+});
+
+test('a recovered session is written to the journal and marked as inferred', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  const first = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  first.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0 };
+  first.store.set('openSessions', { demo: { pid: 1, startedAt: Date.now() - 30 * 60000 } });
+
+  const second = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  const [entry] = second.journal('demo');
+
+  assert.ok(entry, 'a journal line was written');
+  assert.equal(entry.recovered, true, 'and it says the figure was inferred, not measured');
+  assert.ok(entry.seconds >= 29 * 60);
+});
+
+test('an absurdly long open session is capped rather than believed', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  const first = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  first.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0 };
+  // The machine slept for three days with a session open.
+  first.store.set('openSessions', { demo: { pid: 1, startedAt: Date.now() - 3 * 86400000 } });
+
+  const second = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  const entry = second.store.get('entries').demo;
+
+  assert.equal(entry.playtimeSeconds, 6 * 3600, 'capped at six hours');
+  assert.equal(second.journal('demo')[0].capped, true, 'and says so');
+});
+
+test('a launch that died in seconds is not recorded as a session', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  const first = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  first.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0 };
+  first.store.set('openSessions', { demo: { pid: 1, startedAt: Date.now() - 5000 } });
+
+  const second = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  assert.equal(second.store.get('entries').demo.playtimeSeconds, 0, 'five seconds is a failed launch');
+  assert.equal(second.journal('demo').length, 0);
+});
+
+test('an ordinary session still ends normally and is not double counted', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  const library = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0 };
+
+  library._beginSession('demo', 42);
+  assert.ok(library.store.get('openSessions').demo, 'the open session is on disk while it runs');
+
+  library.endSession('demo');
+  assert.deepEqual(library.store.get('openSessions'), {}, 'and cleared when it ends');
+
+  const playtimeAfterEnding = library.store.get('entries').demo.playtimeSeconds;
+
+  // A restart must not credit the same session a second time. endSession only
+  // journals sessions over thirty seconds, so this one writes no line at all -
+  // what matters is that recovery adds nothing on top of it.
+  const after = new Library(dir, CATALOG, stubDownloader(), settings, { allowSimulated: true });
+  assert.equal(after.store.get('entries').demo.playtimeSeconds, playtimeAfterEnding, 'not counted twice');
+  assert.equal(after.journal('demo').length, 0, 'and no recovery line was invented');
+});
+
+/* --- Guards -------------------------------------------------------------- */
+
+test('a title still downloading cannot be uninstalled out from under it', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  const downloader = stubDownloader();
+  downloader.list = () => [{ id: 'd1', gameId: 'demo', status: 'downloading' }];
+
+  const library = new Library(dir, CATALOG, downloader, settings, { allowSimulated: true });
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', path: dir };
+
+  const result = library.uninstall('demo');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'downloading');
+  assert.equal(result.downloadId, 'd1', 'and names the download so the UI can offer to cancel it');
+});
+
+test('a finished download does not block uninstalling', () => {
+  const dir = tmpDir();
+  const settings = createSettings(dir);
+  const downloader = stubDownloader();
+  downloader.list = () => [{ id: 'd1', gameId: 'demo', status: 'completed' }];
+
+  const library = new Library(dir, CATALOG, downloader, settings, { allowSimulated: true });
+  library.store.get('entries').demo = {
+    gameId: 'demo', title: 'Demo', owned: true, status: 'installed', path: path.join(dir, 'demo')
+  };
+
+  assert.notEqual(library.uninstall('demo').reason, 'downloading');
+});
+
+test('a session whose process has gone is reaped', () => {
+  const dir = tmpDir();
+  const library = new Library(dir, CATALOG, stubDownloader(), createSettings(dir), { allowSimulated: true });
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0 };
+
+  // A pid that is certainly not running.
+  library.sessions.set('demo', { pid: 0x7ffffffe, startedAt: Date.now() - 60000 });
+
+  assert.equal(library.sessionAlive('demo'), false);
+  assert.deepEqual(library.reapDeadSessions(), ['demo']);
+  assert.equal(library.sessions.has('demo'), false, 'and it is no longer marked as running');
+});
+
+test('a live session is left alone', () => {
+  const dir = tmpDir();
+  const library = new Library(dir, CATALOG, stubDownloader(), createSettings(dir), { allowSimulated: true });
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0 };
+
+  // This test process is definitely alive.
+  library.sessions.set('demo', { pid: process.pid, startedAt: Date.now() });
+
+  assert.equal(library.sessionAlive('demo'), true);
+  assert.deepEqual(library.reapDeadSessions(), []);
+});
+
+test('a simulated session has no process and is not reaped', () => {
+  const dir = tmpDir();
+  const library = new Library(dir, CATALOG, stubDownloader(), createSettings(dir), { allowSimulated: true });
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', playtimeSeconds: 0 };
+
+  library.sessions.set('demo', { pid: null, startedAt: Date.now() });
+  assert.equal(library.sessionAlive('demo'), true);
+  assert.deepEqual(library.reapDeadSessions(), []);
+});
+
+/* --- Moving an install --------------------------------------------------- */
+
+function installedAt(library, dir, gameId = 'demo') {
+  fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(dir, `${gameId}.pak`), Buffer.alloc(4096, 7));
+  fs.writeFileSync(path.join(dir, 'data', 'levels.bin'), Buffer.alloc(2048, 3));
+  library.store.get('entries')[gameId] = {
+    gameId, title: 'Demo', owned: true, status: 'installed', path: dir, playtimeSeconds: 0
+  };
+  return dir;
+}
+
+test('a title moves to another folder with its files intact', async () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+
+  const from = path.join(root, 'drive-a', 'demo');
+  fs.mkdirSync(from, { recursive: true });
+  installedAt(library, from);
+
+  const targetFolder = path.join(root, 'drive-b');
+  const result = await library.moveInstall('demo', targetFolder);
+
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.path, path.join(targetFolder, 'demo'));
+  assert.ok(fs.existsSync(path.join(result.path, 'demo.pak')), 'the build came with it');
+  assert.ok(fs.existsSync(path.join(result.path, 'data', 'levels.bin')), 'and so did the subfolders');
+  assert.ok(!fs.existsSync(from), 'the old copy is gone');
+  assert.equal(library.store.get('entries').demo.path, result.path, 'and the record points at the new one');
+});
+
+test('the original is untouched when the target already exists', async () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+
+  const from = path.join(root, 'drive-a', 'demo');
+  fs.mkdirSync(from, { recursive: true });
+  installedAt(library, from);
+
+  const targetFolder = path.join(root, 'drive-b');
+  fs.mkdirSync(path.join(targetFolder, 'demo'), { recursive: true });
+
+  const result = await library.moveInstall('demo', targetFolder);
+  assert.equal(result.ok, false);
+  assert.ok(fs.existsSync(path.join(from, 'demo.pak')), 'nothing was moved');
+  assert.equal(library.store.get('entries').demo.path, from);
+});
+
+test('moving somewhere it already is, is refused', async () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+  const from = path.join(root, 'drive-a', 'demo');
+  fs.mkdirSync(from, { recursive: true });
+  installedAt(library, from);
+
+  const result = await library.moveInstall('demo', path.join(root, 'drive-a'));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /already there/);
+});
+
+test('a running game cannot be moved', async () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+  const from = path.join(root, 'drive-a', 'demo');
+  fs.mkdirSync(from, { recursive: true });
+  installedAt(library, from);
+
+  library.sessions.set('demo', { pid: process.pid, startedAt: Date.now() });
+  const result = await library.moveInstall('demo', path.join(root, 'drive-b'));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /Close the game/);
+});
+
+test('a title that is downloading cannot be moved', async () => {
+  const root = tmpDir();
+  const downloader = stubDownloader();
+  downloader.list = () => [{ id: 'd1', gameId: 'demo', status: 'downloading' }];
+
+  const library = new Library(root, CATALOG, downloader, createSettings(root), { allowSimulated: true });
+  const from = path.join(root, 'drive-a', 'demo');
+  fs.mkdirSync(from, { recursive: true });
+  installedAt(library, from);
+
+  const result = await library.moveInstall('demo', path.join(root, 'drive-b'));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /still downloading/);
+});
+
+test('moving something that is not installed is refused', async () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+  const result = await library.moveInstall('demo', path.join(root, 'anywhere'));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /not installed/);
+});
+
+/* --- Finding the damaged blocks ------------------------------------------ */
+
+test('inspect names exactly the blocks that are wrong', () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+
+  const dir = path.join(root, 'install');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'demo.pak');
+
+  // Eight distinct 1 KB blocks.
+  const original = Buffer.concat(Array.from({ length: 8 }, (_, i) => Buffer.alloc(CHUNK, i + 1)));
+  fs.writeFileSync(file, original);
+
+  const manifest = buildManifest(file, { chunkSize: CHUNK });
+  fs.writeFileSync(
+    path.join(dir, 'blacknight.manifest.json'),
+    JSON.stringify({ ...manifest, chunkSize: CHUNK })
+  );
+
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', path: dir };
+
+  // Nothing wrong yet.
+  const clean = library.inspect('demo');
+  assert.equal(clean.ok, true);
+  assert.equal(clean.damaged, 0);
+
+  // Corrupt blocks 2 and 5.
+  const damaged = Buffer.from(original);
+  damaged.fill(0xff, 2 * CHUNK, 3 * CHUNK);
+  damaged.fill(0xff, 5 * CHUNK, 6 * CHUNK);
+  fs.writeFileSync(file, damaged);
+
+  const result = library.inspect('demo');
+  assert.equal(result.damaged, 2, 'two blocks, not the whole file');
+  assert.equal(result.damagedBytes, 2 * CHUNK);
+  assert.deepEqual(
+    result.ranges.map((r) => r.start),
+    [2 * CHUNK, 5 * CHUNK],
+    'and it says exactly which byte ranges to refetch'
+  );
+  assert.equal(result.worthRepairing, true);
+});
+
+test('a mostly-destroyed install is not worth repairing', () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+
+  const dir = path.join(root, 'install');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'demo.pak');
+
+  const original = Buffer.concat(Array.from({ length: 8 }, (_, i) => Buffer.alloc(CHUNK, i + 1)));
+  fs.writeFileSync(file, original);
+  const manifest = buildManifest(file, { chunkSize: CHUNK });
+  fs.writeFileSync(
+    path.join(dir, 'blacknight.manifest.json'),
+    JSON.stringify({ ...manifest, chunkSize: CHUNK })
+  );
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', path: dir };
+
+  fs.writeFileSync(file, Buffer.alloc(original.length, 0xff));
+  const result = library.inspect('demo');
+
+  assert.ok(result.damaged >= 7);
+  assert.equal(result.worthRepairing, false, 'a fresh download is genuinely faster at this point');
+});
+
+test('a build with no block hashes says so rather than guessing', () => {
+  const root = tmpDir();
+  const library = new Library(root, CATALOG, stubDownloader(), createSettings(root), { allowSimulated: true });
+
+  const dir = path.join(root, 'install');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'demo.pak'), Buffer.alloc(1024));
+  fs.writeFileSync(path.join(dir, 'blacknight.manifest.json'), JSON.stringify({ sizeBytes: 1024 }));
+  library.store.get('entries').demo = { gameId: 'demo', title: 'Demo', owned: true, status: 'installed', path: dir };
+
+  const result = library.inspect('demo');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'no-chunks');
+});

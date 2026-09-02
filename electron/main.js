@@ -238,6 +238,17 @@ function bootServices() {
   library.presenceCount = new (require('./services/presence-count').PresenceCount)(settings, log);
   library.cloudSaves = new (require('./services/cloudsaves').CloudSaves)(library, settings, log);
 
+  /**
+   * A game killed from Task Manager never fires an exit event, so the session
+   * would sit open forever. Half a minute is often enough to notice and rare
+   * enough to cost nothing.
+   */
+  const reaper = setInterval(() => {
+    const ended = library.reapDeadSessions();
+    if (ended.length && win && !win.isDestroyed()) win.webContents.send('library:changed');
+  }, 30000);
+  reaper.unref();
+
   // A save conflict is the user's decision to make, so it goes to the window.
   library.onSaveConflict = (gameId, conflict) => {
     log.info('saves', `${gameId}: conflict, asking`);
@@ -706,6 +717,26 @@ function registerIpc() {
    * The install directory comes from the library rather than the renderer, so
    * a compromised page cannot point the installer search somewhere else.
    */
+  const media = new (require('./services/media').Media)(dataDir, log);
+
+  /**
+   * Screenshots, fetched by the main process and handed over as data URIs.
+   *
+   * The renderer never talks to the image host, so the content security policy
+   * stays as strict as it was and a catalogue cannot use the window to reach a
+   * third party.
+   */
+  handle('library:move', (gameId, folder) => library.moveInstall(gameId, folder));
+  handle('library:inspect', (gameId) => library.inspect(gameId));
+
+  handle('library:screenshots', (gameId) => {
+    const game = catalogStore.data.games.find((g) => g.id === gameId);
+    return game ? media.screenshots(game) : [];
+  });
+
+  handle('media:usage', () => media.usage());
+  handle('media:clear', () => media.clear());
+
   handle('library:prerequisites', (gameId) => {
     const entry = library.store.get('entries')[gameId];
     if (!entry?.path) return [];
@@ -849,6 +880,26 @@ function registerIpc() {
     process.stdout.write(`SMOKE: ${String(line).slice(0, 500)}
 `);
     return { ok: true };
+  });
+
+  /**
+   * A markdown document that shipped with the build.
+   *
+   * Allowlisted by name rather than taking a path: this reads from disk on
+   * behalf of the renderer, and a filename from a page is not something to
+   * join onto a directory and open.
+   */
+  handle('app:read-doc', (name) => {
+    const ALLOWED = { 'TRUST.md': 'docs/TRUST.md', 'ARCHITECTURE.md': 'docs/ARCHITECTURE.md' };
+    const relative = ALLOWED[String(name)];
+    if (!relative) return { ok: false, error: 'not-allowed' };
+
+    for (const base of [path.join(__dirname, '..'), process.resourcesPath || '']) {
+      try {
+        return { ok: true, text: fs.readFileSync(path.join(base, relative), 'utf8').slice(0, 200000) };
+      } catch { /* try the next */ }
+    }
+    return { ok: false, error: 'not-found' };
   });
 
   handle('app:changelog', () => {

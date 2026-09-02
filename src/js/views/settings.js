@@ -821,7 +821,8 @@
           ? row('Password', 'Offline sessions do not use a password.', el('span', { class: 'badge' }, 'Offline mode'))
           : row('Password', 'Change the password used to sign in to this launcher.', pwBtn),
         row('Membership', user?.tier === 'plus' ? 'BlackNight+ is active on this account.' : 'You are on the Standard plan.', membership),
-        passkeyRow()
+        passkeyRow(),
+        switchAccountRow()
       ),
       group('Session', null, row('Sign out', 'Ends this session on this machine.', outBtn))
     ];
@@ -887,6 +888,40 @@
     const button = el('button', { class: 'btn btn-ghost btn-sm' }, 'Read');
     button.addEventListener('click', () => BN.views.transfer.whatsNew());
     return row("What's new", 'The release notes that shipped with this build.', button);
+  }
+
+  /**
+   * Switching to another local account.
+   *
+   * One account per install is fine until a machine is shared, which for a
+   * games PC in a house with more than one person is most of them. Signing out
+   * and back in already works; what was missing was any indication that it
+   * was the way to do it, so somebody with a second account had no reason to
+   * think the launcher supported one.
+   *
+   * Each account has its own library, playtime and journal already - that
+   * separation was always there in the store, just never surfaced.
+   */
+  function switchAccountRow() {
+    const button = el('button', { class: 'btn btn-ghost btn-sm' }, 'Switch account');
+
+    button.addEventListener('click', async () => {
+      const ok = await BN.ui.confirm({
+        title: 'Switch account?',
+        message:
+          'This signs out and returns to the sign-in screen. Nothing is deleted — your library, playtime and ' +
+          'journal stay with this account and come back when you sign in again.',
+        confirmLabel: 'Sign out'
+      });
+      if (!ok) return;
+      await BN.state.signOut();
+    });
+
+    return row(
+      'Another account on this PC',
+      'Each account keeps its own library, playtime and journal.',
+      button
+    );
   }
 
   /**
@@ -1131,6 +1166,17 @@
       ['Terms', 'terms'],
       ['Privacy', 'privacy']
     ].filter(([, key]) => BN.util.hasLink(key));
+
+    /**
+     * What the launcher does to the machine, in plain terms.
+     *
+     * Ships with the build and opens locally, so it is readable before anyone
+     * has decided to trust a website belonging to the same people.
+     */
+    const trust = el('button', { class: 'btn btn-sm btn-ghost' });
+    trust.innerHTML = `${icon('shield')} What this does to your PC`;
+    trust.addEventListener('click', () => BN.views.transfer.openDoc('TRUST.md', 'What this launcher does'));
+    node.append(el('div', { class: 'row', style: { justifyContent: 'center', paddingBottom: '10px' } }, trust));
 
     /**
      * A bug report with the details already in it.

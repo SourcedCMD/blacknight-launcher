@@ -63,6 +63,7 @@
     detectOtherLaunchers: false,
     cloudSaves: false, remoteToken: '', cloudSaveState: {},
     sessionGoals: {},
+    birthYear: 0,
     accountsUrl: '',
     rendezvousUrl: '', remoteSharing: false,
     lastRoute: 'games', autoCheckUpdates: true
@@ -329,6 +330,9 @@
       },
       async ghost() { return null; },
       async foreign() { return { games: [], errors: [], scannedAt: Date.now(), reason: 'not-enabled' }; },
+      async move() { return { ok: false, error: 'Not available in the browser preview.' }; },
+      async inspect() { return { ok: false, reason: 'no-chunks', error: 'Not available in the browser preview.' }; },
+      async screenshots() { return []; },
       async prerequisites() { return []; },
       async installPrerequisite() { return { ok: false, error: 'Not available in the browser preview.' }; },
       async cloudStatus() { return { ok: false, reason: 'not-configured' }; },

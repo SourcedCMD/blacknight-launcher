@@ -61,6 +61,8 @@ const DEFAULTS = {
   cloudSaveState: {},
   // gameId -> minutes. Empty unless somebody sets one for themselves.
   sessionGoals: {},
+  // Year only, kept here and sent nowhere. Empty until somebody is asked.
+  birthYear: 0,
   // Where to send "somebody is playing this" beats. Empty means the store
   // shows no player counts, which is what it has always done.
   presenceUrl: '',

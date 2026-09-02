@@ -61,7 +61,7 @@
 
     const details = el('button', { class: 'btn btn-ghost btn-lg' });
     details.innerHTML = `${icon('info')} Learn more`;
-    details.addEventListener('click', () => BN.components.openDetail(game.id));
+    details.addEventListener('click', () => BN.components.openDetailGated(game.id));
     actions.appendChild(details);
 
     host.querySelectorAll('[data-banner]').forEach((dot) =>

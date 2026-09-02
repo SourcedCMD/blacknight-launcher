@@ -152,7 +152,7 @@
         else go(target.route);
       } else if (target.type === 'game') {
         go('store');
-        setTimeout(() => BN.components.openDetail(target.gameId), 160);
+        setTimeout(() => BN.components.openDetailGated(target.gameId), 160);
       } else if (target.type === 'intent') {
         openIntent(target);
       } else if (target.type === 'handoff') {
@@ -215,7 +215,7 @@
     if (wantsPlay && !game.installed) {
       BN.ui.toast('Not installed', `${game.title} is not installed on this machine.`, { kind: 'info' });
       go('store');
-      setTimeout(() => BN.components.openDetail(gameId), 160);
+      setTimeout(() => BN.components.openDetailGated(gameId), 160);
       return;
     }
 
@@ -414,7 +414,7 @@
         <span class="side-item-name">${esc(game.title)}</span>
         <span class="side-item-meta">${esc(BN.components.statusLine(game))}</span>
       </span>`;
-    item.addEventListener('click', () => BN.components.openDetail(game.id));
+    item.addEventListener('click', () => BN.components.openDetailGated(game.id));
     return item;
   }
 
@@ -639,7 +639,7 @@
         icon: game.installed ? 'play' : 'package',
         hint: BN.components.statusLine(game),
         keywords: game.genre.join(' ') + ' ' + game.tags.join(' '),
-        run: () => BN.components.openDetail(game.id)
+        run: () => BN.components.openDetailGated(game.id)
       });
     }
 
@@ -820,7 +820,7 @@
           <span class="side-item-name">${esc(entry.title)}</span>
           <span class="side-item-meta">${esc(entry.name)} \u00b7 ${since}m</span>
         </span>`;
-      row.addEventListener('click', () => BN.components.openDetail(entry.gameId));
+      row.addEventListener('click', () => BN.components.openDetailGated(entry.gameId));
       host.appendChild(row);
     }
   }

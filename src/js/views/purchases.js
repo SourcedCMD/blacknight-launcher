@@ -55,7 +55,7 @@
 
     node.addEventListener('click', () => {
       BN.ui.closeModal();
-      BN.components.openDetail(entry.id);
+      BN.components.openDetailGated(entry.id);
     });
     return node;
   }

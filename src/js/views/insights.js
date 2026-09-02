@@ -57,7 +57,7 @@
     BN.util.coverSvg(row.querySelector('.backlog-art'));
     row.addEventListener('click', () => {
       BN.ui.closeModal();
-      BN.components.openDetail(game.id);
+      BN.components.openDetailGated(game.id);
     });
     return row;
   }

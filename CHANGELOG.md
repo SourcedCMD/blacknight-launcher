@@ -8,6 +8,53 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **Screenshots.** Every image in the launcher was generated until now, which
+  made the store a place you could not see what you were buying. A catalogue
+  entry can carry `media.screenshots` and `media.trailerUrl`; the main process
+  fetches and caches them and hands the renderer data URIs, so the content
+  security policy stays exactly as strict as it was and the window never talks
+  to an image host. Titles without screenshots show generated art and say so
+  rather than letting anyone mistake it for gameplay. The catalogue check warns
+  on a released title that has none.
+- **An age gate.** The rating has been in the catalogue since it was written
+  and was displayed for the first time last release; showing it without acting
+  on it was the worse of the two options. Asks once, for a year of birth only,
+  keeps the answer on the machine, and never gates anything below the mature
+  threshold.
+- **Move a title to another drive**, copy-verify-then-remove, so a failure at
+  any point leaves the original playable. Previously the answer to "I bought an
+  SSD" was to download ninety gigabytes again.
+- **Per-block inspection**, naming the exact byte ranges that are damaged
+  rather than declaring a whole install bad. Says plainly when a build ships no
+  block hashes, and says when a fresh download would genuinely be faster.
+- **Per-title news**, from the `gameId` every news item has always carried and
+  only the front page ever read.
+- **Account switching**, and a note that each account already keeps its own
+  library, playtime and journal.
+- **`docs/TRUST.md`**, readable from inside the launcher: why Windows warns
+  about an unsigned build, how to check the hash of what you downloaded, a
+  table of everything that leaves the machine under every configuration, and
+  what uninstalling does and does not remove.
+
+### Fixed
+- **A play session no longer dies with the launcher.** Sessions lived only in
+  memory, so a crash, a kill, or a machine going down lost the whole thing —
+  and the evolving art, night map, session ghost and achievements are all
+  computed from playtime. The open session is now written to disk and credited
+  on the next start, capped at six hours and marked in the journal as inferred
+  rather than measured.
+- **Uninstall can no longer race a download** for the same title, which left a
+  transfer writing into a directory that had just been removed.
+- **A game killed from Task Manager is noticed.** Its exit event never arrives,
+  so the session used to sit open forever, blocking uninstall and quietly
+  accruing playtime nobody spent.
+- A control character had got into the art-snapshot id normaliser through a bad
+  escape in a patch, which is why that test failed roughly one run in ten. The
+  snapshot script also ran its command line when imported, printing a table of
+  hashes into the test output.
+
+
 ### Fixed
 - **Downloads are retried instead of abandoned.** A dropped connection used to
   mark a transfer failed and stop, stranding a 90 GB download until somebody

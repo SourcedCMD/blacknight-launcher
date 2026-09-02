@@ -58,6 +58,11 @@
       "src/**/*",
       "package.json"
     ],
+    "extraResources": [
+      "CHANGELOG.md",
+      "docs/TRUST.md",
+      "docs/ARCHITECTURE.md"
+    ],
     "protocols": [
       {
         "name": "BlackNight Launcher",

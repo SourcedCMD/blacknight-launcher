@@ -227,6 +227,32 @@
     });
   }
 
+  /**
+   * Any markdown document that ships with the build.
+   *
+   * Used for the trust document, and available for anything else worth
+   * reading without leaving the launcher. Read from disk rather than
+   * duplicated into the UI, so there is one copy that cannot drift.
+   */
+  async function openDoc(name, title) {
+    const result = await BN.api.app.readDoc?.(name);
+
+    const body = el('div', { class: 'changelog' });
+    body.innerHTML = result?.ok
+      ? renderMarkdown(result.text)
+      : '<p class="dim">That document could not be read from this build.</p>';
+
+    BN.ui.modal({
+      title: title || name,
+      wide: true,
+      content: body,
+      footer: [{ label: BN.t('action.close'), class: 'btn-accent', onClick: ({ close }) => close() }]
+    });
+  }
+
   BN.views = BN.views || {};
-  BN.views.transfer = { exportSettings, importSettings, whatsNew, exportable, reconcile, validate, renderMarkdown };
+  BN.views.transfer = {
+    exportSettings, importSettings, whatsNew, openDoc,
+    exportable, reconcile, validate, renderMarkdown
+  };
 })();

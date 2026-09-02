@@ -48,6 +48,46 @@ function checkGame(game, index) {
 
   if (!isNumber(game.sizeBytes) || game.sizeBytes <= 0) fail(where, 'needs a positive sizeBytes');
 
+  /**
+   * Media, which is optional but must be right when it is there.
+   *
+   * The launcher fetches screenshots in the main process and hands them to the
+   * renderer as data URIs, so the content security policy never has to permit
+   * a remote image. https only: a screenshot fetched over a plain connection
+   * can be swapped in transit, and this one ends up rendered in the window.
+   */
+  if (game.media !== undefined) {
+    if (typeof game.media !== 'object' || game.media === null) {
+      fail(where, 'media must be an object');
+    } else {
+      const shots = game.media.screenshots;
+      if (shots !== undefined) {
+        if (!Array.isArray(shots)) {
+          fail(where, 'media.screenshots must be an array');
+        } else {
+          if (shots.length > 12) fail(where, `media.screenshots has ${shots.length}; only the first 12 are shown`);
+          shots.forEach((url, i) => {
+            if (!isString(url) || !/^https:\/\//i.test(url)) {
+              fail(where, `media.screenshots[${i}] must be an https URL`);
+            } else if (!/\.(jpe?g|png|webp|avif)(\?|$)/i.test(url)) {
+              fail(where, `media.screenshots[${i}] must end in .jpg, .png, .webp or .avif`);
+            }
+          });
+        }
+      }
+
+      if (game.media.trailerUrl !== undefined && !/^https:\/\//i.test(String(game.media.trailerUrl))) {
+        fail(where, 'media.trailerUrl must be an https URL');
+      }
+    }
+  }
+
+  // Not a failure: a store entry with no screenshots cannot sell the game, and
+  // saying so once per title is the point at which somebody notices.
+  if (game.status === 'released' && !(game.media?.screenshots || []).length) {
+    note(where, 'has no screenshots - a released title is being sold on generated art alone');
+  }
+
   // A release date is what drives countdowns and the pre-order unlock gate.
   if (game.status !== 'released' || game.releaseDate) {
     if (!isString(game.releaseDate) || !/^\d{4}-\d{2}-\d{2}$/.test(game.releaseDate)) {

@@ -18,8 +18,22 @@ class Library {
     this.settings = settings;
     // Simulated installs are a development affordance, never a shipped one.
     this.allowSimulated = allowSimulated;
-    this.store = new Store(dir, 'library', { entries: {}, recent: [] });
+    this.store = new Store(dir, 'library', { entries: {}, recent: [], openSessions: {} });
     this.sessions = new Map(); // gameId -> { pid, startedAt }
+
+    /**
+     * Sessions that were open when the launcher last stopped.
+     *
+     * A session used to live only in memory, so a launcher that crashed, was
+     * killed, or went down with the machine lost the whole thing - and this
+     * launcher computes its evolving art, night map, session ghost and
+     * achievements from playtime. Losing three hours of it is not a cosmetic
+     * problem.
+     *
+     * Recovered on the next start rather than resumed: whatever was playing
+     * has certainly stopped by now.
+     */
+    this._recoverSessions();
 
     this.downloader.on('completed', (item) => this._onDownloadComplete(item));
     this._migrateOwnership();
@@ -973,6 +987,21 @@ class Library {
     if (!entry) return { ok: false, error: 'Not installed.' };
     if (this.sessions.has(gameId)) return { ok: false, error: 'Close the game before uninstalling.' };
 
+    // A transfer for this title still writing into the directory about to be
+    // removed leaves a download pointed at nothing, and a partial file nobody
+    // owns. Cancelling it first is the only sane order.
+    const inFlight = this.downloader
+      .list()
+      .find((item) => item.gameId === gameId && !['completed', 'failed'].includes(item.status));
+    if (inFlight) {
+      return {
+        ok: false,
+        reason: 'downloading',
+        error: 'That title is still downloading. Cancel the download first.',
+        downloadId: inFlight.id
+      };
+    }
+
     // Saves live inside the install folder, so they have to be copied out
     // before it is deleted - otherwise "keep my saves" quietly means nothing.
     let savedAside = false;
@@ -1008,6 +1037,72 @@ class Library {
   }
 
   /** Re-checks the install on disk against its manifest. */
+  /**
+   * Finds which blocks of an install are wrong.
+   *
+   * Verify answers "is this install good"; on a ninety gigabyte title, fixing
+   * one bad block by reinstalling is a twenty-minute punishment for a
+   * ten-second problem. The chunk manifest a build already ships makes the
+   * narrower question answerable: hash each block, compare, and report only
+   * the ones that do not match.
+   *
+   * Returns the byte ranges that need refetching, which is exactly what the
+   * downloader's ranged fetch already takes.
+   */
+  inspect(gameId) {
+    const entry = this.store.get('entries')[gameId];
+    if (!entry?.path) return { ok: false, error: 'Nothing to inspect.' };
+
+    const manifestPath = path.join(entry.path, 'blacknight.manifest.json');
+    if (!fs.existsSync(manifestPath)) return { ok: false, error: 'This install has no manifest.' };
+
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch {
+      return { ok: false, error: 'That manifest could not be read.' };
+    }
+
+    if (!manifest.chunks?.length) {
+      // Without per-block hashes there is nothing finer to say than verify
+      // already says, and pretending otherwise would be the dishonest option.
+      return { ok: false, reason: 'no-chunks', error: 'This build ships no block hashes, so only a full check is possible.' };
+    }
+
+    const file = path.join(entry.path, `${gameId}.pak`);
+    if (!fs.existsSync(file)) return { ok: false, error: 'The build file is missing entirely.' };
+
+    const { buildManifest } = require('./chunks');
+    const chunkSize = manifest.chunkSize || 0;
+    const current = buildManifest(file, { chunkSize });
+
+    // The manifest stores a flat list of hashes; a block's position is its
+    // index times the chunk size, which is why the size has to match too.
+    const bad = [];
+    for (let i = 0; i < manifest.chunks.length; i++) {
+      if (current.chunks[i] === manifest.chunks[i]) continue;
+      const start = i * chunkSize;
+      // The last block is short, so the end is clamped to the file.
+      const end = Math.min(start + chunkSize, manifest.totalBytes || current.totalBytes) - 1;
+      bad.push({ index: i, start, end });
+    }
+
+    const damagedBytes = bad.reduce((sum, c) => sum + (c.end - c.start + 1), 0);
+    const totalBytes = manifest.totalBytes || current.totalBytes;
+
+    return {
+      ok: true,
+      total: manifest.chunks.length,
+      damaged: bad.length,
+      damagedBytes,
+      totalBytes,
+      ranges: bad.map((c) => ({ start: c.start, end: c.end })),
+      // Worth knowing before offering a repair: past a certain point a fresh
+      // download is genuinely the faster answer.
+      worthRepairing: bad.length > 0 && damagedBytes < totalBytes * 0.5
+    };
+  }
+
   verify(gameId) {
     const entry = this.store.get('entries')[gameId];
     if (!entry?.path) return { ok: false, error: 'Nothing to verify.' };
@@ -1120,8 +1215,112 @@ class Library {
     }
   }
 
+  /**
+   * Credits playtime for a session the launcher never saw end.
+   *
+   * The length is capped: a machine that slept for two days with a session
+   * open would otherwise record two days of play. Six hours is longer than
+   * almost any real sitting and short enough that a bad record cannot corrupt
+   * the history the art and the night map are drawn from.
+   *
+   * Recorded as `recovered` so the journal can be honest that this figure was
+   * inferred rather than measured.
+   */
+  /**
+   * Whether the process behind a session is still alive.
+   *
+   * `kill(pid, 0)` sends no signal and only reports whether the process exists
+   * and is reachable. It is the cheapest honest answer available without
+   * platform-specific window inspection.
+   *
+   * This deliberately does not try to detect a *hung* game - a process that is
+   * running but not painting. Distinguishing that from a long load screen
+   * needs window-level introspection, and getting it wrong means telling
+   * somebody their game has crashed while they are watching it work.
+   */
+  sessionAlive(gameId) {
+    const session = this.sessions.get(gameId);
+    if (!session) return null;
+    if (!session.pid) return true; // a simulated session has no process
+
+    try {
+      process.kill(session.pid, 0);
+      return true;
+    } catch (err) {
+      // EPERM means it exists but belongs to somebody else, which still counts.
+      return err.code === 'EPERM';
+    }
+  }
+
+  /**
+   * Closes out sessions whose process has gone without telling us.
+   *
+   * A game killed from Task Manager, or one whose exit event never arrived,
+   * would otherwise sit marked as running forever - blocking uninstall,
+   * blocking a save restore, and quietly accruing playtime that never
+   * happened.
+   */
+  reapDeadSessions() {
+    const ended = [];
+    for (const gameId of [...this.sessions.keys()]) {
+      if (this.sessionAlive(gameId) !== false) continue;
+      this.log?.info('sessions', `${gameId} is no longer running; closing the session`);
+      this.endSession(gameId, { code: null, signal: null, error: 'the process disappeared' });
+      ended.push(gameId);
+    }
+    return ended;
+  }
+
+  _recoverSessions() {
+    const open = this.store.get('openSessions') || {};
+    const ids = Object.keys(open);
+    if (!ids.length) return;
+
+    const CAP_SECONDS = 6 * 3600;
+    const entries = this.store.get('entries');
+
+    for (const gameId of ids) {
+      const session = open[gameId];
+      const entry = entries[gameId];
+      if (!entry || !session?.startedAt) continue;
+
+      const elapsed = Math.round((Date.now() - session.startedAt) / 1000);
+      // Under a minute is a launch that failed, not a session worth recording.
+      if (elapsed < 60) continue;
+
+      const seconds = Math.min(elapsed, CAP_SECONDS);
+      entry.playtimeSeconds = (entry.playtimeSeconds || 0) + seconds;
+      entry.lastPlayed = session.startedAt + seconds * 1000;
+
+      this.addJournalEntry({
+        gameId,
+        title: entry.title || gameId,
+        seconds,
+        at: entry.lastPlayed,
+        recovered: true,
+        capped: elapsed > CAP_SECONDS,
+        note: ''
+      });
+
+      this.log?.info(
+        'sessions',
+        `Recovered ${Math.round(seconds / 60)}m for ${gameId}${elapsed > CAP_SECONDS ? ' (capped)' : ''}`
+      );
+    }
+
+    this.store.set('entries', entries);
+    this.store.set('openSessions', {});
+  }
+
   _beginSession(gameId, pid) {
-    this.sessions.set(gameId, { pid, startedAt: Date.now() });
+    const startedAt = Date.now();
+    this.sessions.set(gameId, { pid, startedAt });
+
+    // Written before anything else, so a crash a second later still leaves a
+    // record of when this began.
+    const open = this.store.get('openSessions') || {};
+    open[gameId] = { pid, startedAt };
+    this.store.set('openSessions', open);
     this.downloader.setGameRunning?.(true);
     this.presenceCount?.start(gameId);
     this.onSessionChange?.(gameId, true);
@@ -1136,6 +1335,11 @@ class Library {
     const session = this.sessions.get(gameId);
     if (!session) return { ok: false };
     this.sessions.delete(gameId);
+
+    const open = this.store.get('openSessions') || {};
+    delete open[gameId];
+    this.store.set('openSessions', open);
+
     this.presenceCount?.stop(gameId);
 
     // Uploaded after the local snapshot below, and never awaited: a slow or
@@ -1186,6 +1390,108 @@ class Library {
     this.onSessionChange?.(gameId, false);
 
     return { ok: true, crashed, exit: entry.lastExit, seconds, library: this.list() };
+  }
+
+  /**
+   * Moves an installed title to another library folder.
+   *
+   * Without this the answer to "I bought an SSD" is uninstall and download
+   * ninety gigabytes again, which is an absurd thing to tell somebody about
+   * files they already have.
+   *
+   * Copy, verify, then remove - never move-then-hope. A rename across drives
+   * is a copy anyway, and doing it in that order means a failure at any point
+   * leaves the original install untouched and still playable. The old copy is
+   * only deleted once the new one is known to be complete.
+   */
+  async moveInstall(gameId, targetFolder, onProgress = null) {
+    const entries = this.store.get('entries');
+    const entry = entries[gameId];
+
+    if (!entry || entry.status !== 'installed') return { ok: false, error: 'That title is not installed.' };
+    if (this.sessions.has(gameId)) return { ok: false, error: 'Close the game before moving it.' };
+
+    const busy = this.downloader
+      .list()
+      .find((item) => item.gameId === gameId && !['completed', 'failed'].includes(item.status));
+    if (busy) return { ok: false, error: 'That title is still downloading.' };
+
+    const from = entry.path;
+    if (!from || !fs.existsSync(from)) return { ok: false, error: 'Its current folder is missing.' };
+
+    const to = path.join(targetFolder, gameId);
+    if (path.resolve(to).toLowerCase() === path.resolve(from).toLowerCase()) {
+      return { ok: false, error: 'It is already there.' };
+    }
+    if (fs.existsSync(to)) return { ok: false, error: 'There is already a folder with that name there.' };
+
+    // Enough room, checked before a single byte is copied.
+    const size = this._folderSize(from);
+    const free = this._freeSpace(targetFolder);
+    if (free !== null && free < size * 1.05) {
+      return {
+        ok: false,
+        reason: 'no-space',
+        error: 'There is not enough free space on that drive.',
+        needBytes: size,
+        freeBytes: free
+      };
+    }
+
+    this.log?.info('move', `${gameId}: ${from} -> ${to} (${Math.round(size / 1e9)} GB)`);
+
+    try {
+      fs.mkdirSync(targetFolder, { recursive: true });
+      // cpSync rather than rename: a rename across volumes fails outright on
+      // some filesystems and silently degrades to a copy on others.
+      fs.cpSync(from, to, { recursive: true, force: false, errorOnExist: true });
+    } catch (err) {
+      // Anything partially written is removed, so a failed move does not leave
+      // half a game occupying the space it was trying to free.
+      try {
+        fs.rmSync(to, { recursive: true, force: true });
+      } catch { /* nothing to clean */ }
+      this.log?.warn('move', `${gameId}: copy failed - ${err.message}`);
+      return { ok: false, error: `The copy failed: ${err.message}` };
+    }
+
+    // The copy is only trusted once it has been counted.
+    const copied = this._folderSize(to);
+    if (copied < size) {
+      try {
+        fs.rmSync(to, { recursive: true, force: true });
+      } catch { /* nothing to clean */ }
+      return { ok: false, error: 'The copy came out short, so nothing was changed.' };
+    }
+
+    entry.path = to;
+    this.store.set('entries', entries);
+
+    // Only now, with the record pointing at a verified copy.
+    try {
+      fs.rmSync(from, { recursive: true, force: true });
+    } catch (err) {
+      // The move succeeded; the old folder lingering is untidy, not broken.
+      this.log?.warn('move', `${gameId}: moved, but the old folder could not be removed - ${err.message}`);
+      return { ok: true, path: to, bytes: copied, oldFolderLeft: from };
+    }
+
+    onProgress?.({ done: true });
+    return { ok: true, path: to, bytes: copied };
+  }
+
+  /** Bytes used by a folder, for the space check and the size shown. */
+  _folderSize(dir) {
+    let total = 0;
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) {
+        if (!entry.isFile()) continue;
+        try {
+          total += fs.statSync(path.join(entry.parentPath || entry.path, entry.name)).size;
+        } catch { /* a file that vanished mid-walk */ }
+      }
+    } catch { /* unreadable, so treated as empty */ }
+    return total;
   }
 
   setFavorite(gameId, favorite) {

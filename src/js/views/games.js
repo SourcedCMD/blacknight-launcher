@@ -72,7 +72,7 @@
 
       const details = el('button', { class: 'btn btn-ghost btn-lg' });
       details.innerHTML = `${icon('info')} Details`;
-      details.addEventListener('click', () => BN.components.openDetail(game.id));
+      details.addEventListener('click', () => BN.components.openDetailGated(game.id));
       actions.appendChild(details);
     }
 
@@ -99,7 +99,7 @@
       return b;
     };
 
-    menu.append(item('View details', 'info', () => BN.components.openDetail(game.id)));
+    menu.append(item('View details', 'info', () => BN.components.openDetailGated(game.id)));
     menu.append(item(game.favorite ? 'Remove from wishlist' : 'Add to wishlist', 'heart', () => BN.state.toggleFavorite(game.id).then(render)));
     if (game.installed) {
       menu.append(item('Open install folder', 'folder', () => BN.api.app.openPath(game.installPath)));

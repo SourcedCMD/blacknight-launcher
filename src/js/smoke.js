@@ -106,6 +106,8 @@
     }
 
     // The modals, which are where most of the newer code lives.
+    // openDetail directly rather than the gated wrapper: the age gate is its
+    // own thing to test, and a smoke run should not be answering a dialog.
     check('a game detail opens', () => {
       BN.components.openDetail(BN.state.data.catalog.games[0].id);
       return !!document.querySelector('.modal');
@@ -134,6 +136,11 @@
     check('the logo draws', () => BN.art.logo(32).includes('<svg'));
     check('a QR code draws', () => BN.qr.svg('blacknight://games').startsWith('<svg'));
     check('translation resolves', () => BN.t('action.play') === 'Play');
+
+    // The age gate decides what a rated title does, so a wrong answer here is
+    // either a store that never opens or one that never asks.
+    check('the age gate allows an unrated title', () => BN.views.ageGate.allowed({ rating: 'E' }));
+    check('the age gate holds back a mature one', () => !BN.views.ageGate.allowed({ rating: 'M' }));
 
     // Settings search, since it reaches into every section builder.
     BN.app.go('settings');

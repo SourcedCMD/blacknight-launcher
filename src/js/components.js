@@ -277,6 +277,19 @@
   /* --------------------------------------------------------------------- */
   /* Detail sheet                                                           */
 
+  /**
+   * Opens a title's page, asking about age first when the rating calls for it.
+   *
+   * Wrapped rather than folded into openDetail so every existing call site -
+   * the store grid, the palette, a deep link, the now-playing rail - is gated
+   * without any of them having to remember to be.
+   */
+  async function openDetailGated(gameId, options) {
+    const game = BN.state.game(gameId);
+    if (game && BN.views.ageGate && !(await BN.views.ageGate.check(game))) return;
+    openDetail(gameId, options);
+  }
+
   function openDetail(gameId, { focus = null } = {}) {
     const game = BN.state.game(gameId);
     if (!game) return;
@@ -300,6 +313,10 @@
         <div class="detail-grid">
           <div>
             <p style="color:var(--text-dim);line-height:1.8">${esc(game.description)}</p>
+
+            <div id="detail-gallery" class="gallery-slot"></div>
+
+            <div id="detail-news"></div>
 
             <h3 class="display" style="margin:26px 0 12px;font-size:.9rem">Features</h3>
             <div class="row wrap" style="gap:8px">
@@ -409,6 +426,9 @@
       actions.appendChild(timeline);
     }
 
+    const trailer = BN.views.gallery.trailerButton(game);
+    if (trailer) actions.appendChild(trailer);
+
     // The night map for this one title, which is a different question from the
     // one the journal answers across everything.
     if ((game.playtimeSeconds || 0) > 0) {
@@ -422,6 +442,13 @@
     }
 
     if (game.installed) {
+      const move = el('button', { class: 'btn btn-ghost', 'data-tip': 'Move to another drive' });
+      move.innerHTML = icon('folder');
+      move.addEventListener('click', () => offerMove(game));
+      actions.appendChild(move);
+    }
+
+    if (game.installed) {
       const folder = el('button', { class: 'btn btn-ghost', 'data-tip': 'Open install folder' });
       folder.innerHTML = icon('folder');
       folder.addEventListener('click', () => BN.api.app.openPath(game.installPath));
@@ -429,6 +456,12 @@
     }
 
     /* Editions --------------------------------------------------------- */
+    // Off the critical path: a dozen images must never hold up the page that
+    // describes the game.
+    BN.views.gallery.render(body.querySelector('#detail-gallery'), game);
+
+    paintGameNews(body.querySelector('#detail-news'), game);
+
     const editions = body.querySelector('#editions');
     let selected = game.editions[0]?.id;
     const paintEditions = () => {
@@ -631,6 +664,119 @@
       );
     }
     return true;
+  }
+
+  /**
+   * News and patch notes for this title.
+   *
+   * The catalogue has carried a gameId on every news item since it was
+   * written, and the only thing that read it was the front page rail - so a
+   * player looking at a game had no way to see what had changed in it.
+   * Newest first, and nothing is rendered at all when a title has no news.
+   */
+  function paintGameNews(host, game) {
+    if (!host) return;
+
+    const items = (BN.state.data.catalog.news || [])
+      .filter((item) => item.gameId === game.id)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      .slice(0, 5);
+
+    if (!items.length) return;
+
+    host.innerHTML =
+      '<h3 class="display" style="margin:26px 0 12px;font-size:.9rem">Latest on this title</h3>';
+
+    const list = el('div', { class: 'col', style: { gap: '10px' } });
+    for (const item of items) {
+      const entry = el('article', { class: 'game-news' });
+      entry.innerHTML = [
+        '<div class="game-news-head">',
+        `<span class="badge">${esc(item.kind || 'Update')}</span>`,
+        `<span class="game-news-date">${esc(date(item.date))}</span>`,
+        '</div>',
+        `<h4>${esc(item.title)}</h4>`,
+        `<p>${esc(item.body)}</p>`
+      ].join('');
+      list.append(entry);
+    }
+    host.append(list);
+  }
+
+  /**
+   * Moves an installed title to another library folder.
+   *
+   * The copy is done before the original is removed, so this is safe to
+   * cancel out of and safe to have fail - but it does mean both copies exist
+   * for a while, and somebody about to move ninety gigabytes deserves to be
+   * told that before it starts rather than after.
+   */
+  async function offerMove(game) {
+    const folders = await BN.api.library.folders();
+    const others = (folders || []).filter(
+      (f) => f.path.toLowerCase() !== String(game.installPath || '').toLowerCase().replace(/[\\/][^\\/]+$/, '')
+    );
+
+    if (!others.length) {
+      BN.ui.toast(
+        'Nowhere to move it',
+        'Add another library folder in Settings first.',
+        { kind: 'info', action: { label: 'Settings', onClick: () => BN.views.settings.go('downloads') } }
+      );
+      return;
+    }
+
+    const body = el('div', { class: 'col', style: { gap: '10px' } });
+    body.innerHTML = `<p class="dim" style="margin:0;line-height:1.6">
+      ${esc(game.title)} is ${esc(bytes(game.sizeBytes || 0))}. It is copied first and only removed from the old
+      drive once the copy is complete, so both need the space for a few minutes.</p>`;
+
+    let chosen = null;
+    const list = el('div', { class: 'col', style: { gap: '6px' } });
+    for (const folder of others) {
+      const option = el('button', { class: 'btn btn-ghost', style: { justifyContent: 'space-between' } });
+      option.innerHTML = `<span>${esc(folder.path)}</span><span class="mono dim">${esc(bytes(folder.freeBytes || 0))} free</span>`;
+      option.addEventListener('click', () => {
+        chosen = folder.path;
+        for (const other of list.children) other.classList.remove('btn-accent');
+        option.classList.add('btn-accent');
+      });
+      list.append(option);
+    }
+    body.append(list);
+
+    BN.ui.modal({
+      title: `Move ${game.title}`,
+      content: body,
+      footer: [
+        { label: BN.t('action.close'), class: 'btn-ghost', onClick: ({ close }) => close() },
+        {
+          label: 'Move',
+          class: 'btn-accent',
+          onClick: async ({ close }) => {
+            if (!chosen) {
+              BN.ui.toast('Pick a folder first', '', { kind: 'info' });
+              return;
+            }
+            close();
+            BN.ui.toast('Moving', `${game.title} - this can take a while.`, { kind: 'info', ms: 8000 });
+
+            const result = await BN.api.library.move(game.id, chosen);
+            await BN.state.refreshLibrary();
+
+            BN.ui.toast(
+              result.ok ? 'Moved' : 'Could not move it',
+              result.ok
+                ? result.oldFolderLeft
+                  ? `Now on the new drive. The old folder could not be removed and is still at ${result.oldFolderLeft}.`
+                  : `${game.title} is now on the new drive.`
+                : result.error || '',
+              { kind: result.ok ? 'ok' : 'error', ms: 9000 }
+            );
+          }
+        }
+      ]
+    });
   }
 
   /**
@@ -1051,6 +1197,6 @@
 
   BN.components = {
     primaryAction, runAction, actionButton, statusLine, statusBadge, priceTag,
-    gameCard, newsCard, openDetail, confirmUninstall, reportCrash, launchRitual, statusLabel, offerVerify
+    gameCard, newsCard, openDetail, openDetailGated, confirmUninstall, reportCrash, launchRitual, statusLabel, offerVerify
   };
 })();

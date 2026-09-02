@@ -61,6 +61,8 @@ electron/            Main process
     presence-count.js Heartbeats so the store can show a player count
     cloudsaves.js    Packs a save folder and syncs it, refusing to overwrite
     accounts-remote.js Client for the account service (passkeys, saves)
+    media.js         Fetches and caches screenshots, as data URIs
+    prerequisites.js Runtimes a title needs, and the installer it shipped
   data/catalog.json  The title catalogue
 
 src/                 Renderer (classic scripts, dependency-ordered in index.html)
@@ -475,6 +477,22 @@ paints quickly. Nobody adds two megabytes of JavaScript deliberately; it
 arrives as twelve reasonable-looking commits. So the sizes are written down in
 `scripts/check-budget.js` and checked in CI. Raising a limit is a visible line
 in a diff that someone has to justify.
+
+## Screenshots, and the content security policy
+
+The renderer's CSP is `img-src 'self' data:` and deliberately does not permit
+remote images. Screenshots would be the obvious reason to relax that, and the
+trade is a bad one: a catalogue is a remote document, and letting it name URLs
+the window then fetches turns it into a way to reach a third party from inside
+the app.
+
+So the main process fetches instead — https only, image content types only,
+one redirect hop, size-capped, cached to disk — and hands the renderer a data
+URI. Three things fall out of that: the window never talks to the image host,
+images work offline after the first fetch, and the CSP is untouched.
+
+Trailers are not fetched at all. A video is tens of megabytes and belongs in a
+browser, so a trailer link opens externally.
 
 ## Status
 
